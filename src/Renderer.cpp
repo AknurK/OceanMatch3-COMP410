@@ -608,6 +608,52 @@ void Renderer::initSpikeMesh() {
   glBindVertexArray(0);
 }
 
+void Renderer::initPufferFinMesh() {
+  // Double-sided diamond fin in local XY plane. The model matrix orients it.
+  float verts[] = {
+      // pos                 // uv       // normal
+       0.00f,  0.30f, 0.00f, 0.5f, 1.0f,  0.0f, 0.0f,  1.0f,
+       0.34f,  0.00f, 0.00f, 1.0f, 0.5f,  0.0f, 0.0f,  1.0f,
+       0.00f, -0.30f, 0.00f, 0.5f, 0.0f,  0.0f, 0.0f,  1.0f,
+      -0.34f,  0.00f, 0.00f, 0.0f, 0.5f,  0.0f, 0.0f,  1.0f,
+
+       0.00f,  0.30f, 0.00f, 0.5f, 1.0f,  0.0f, 0.0f, -1.0f,
+      -0.34f,  0.00f, 0.00f, 0.0f, 0.5f,  0.0f, 0.0f, -1.0f,
+       0.00f, -0.30f, 0.00f, 0.5f, 0.0f,  0.0f, 0.0f, -1.0f,
+       0.34f,  0.00f, 0.00f, 1.0f, 0.5f,  0.0f, 0.0f, -1.0f,
+  };
+
+  unsigned int inds[] = {
+      0, 1, 2, 0, 2, 3,
+      4, 5, 6, 4, 6, 7,
+  };
+
+  pufferFinIndexCount = 12;
+
+  glGenVertexArrays(1, &pufferFinVAO);
+  glGenBuffers(1, &pufferFinVBO);
+  glGenBuffers(1, &pufferFinEBO);
+
+  glBindVertexArray(pufferFinVAO);
+  glBindBuffer(GL_ARRAY_BUFFER, pufferFinVBO);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, pufferFinEBO);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(inds), inds, GL_STATIC_DRAW);
+
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *)0);
+
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
+                        (void *)(3 * sizeof(float)));
+
+  glEnableVertexAttribArray(2);
+  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
+                        (void *)(5 * sizeof(float)));
+
+  glBindVertexArray(0);
+}
+
 void Renderer::initPiranhaMesh() {
   std::vector<float> verts;
   std::vector<unsigned int> inds;
@@ -849,6 +895,7 @@ void Renderer::init(int windowW, int windowH, Shader *shader2D,
   initCubeMesh();
   initPufferMesh();
   initSpikeMesh();
+  initPufferFinMesh();
   initPiranhaMesh();
   initEffectQuad();
 
@@ -936,14 +983,34 @@ void Renderer::drawCube(unsigned int tex, float worldX, float worldZ, float r,
 }
 // pufferfish drawing
 void Renderer::drawPufferfish(float worldX, float worldZ, float brightness) {
-  float cosA = cosf(rotAngle);
-  float sinA = sinf(rotAngle);
+  float cosA = 1.0f;
+  float sinA = 0.0f;
+
+  auto setPufferYaw = [&](float yaw) {
+    cosA = cosf(yaw);
+    sinA = sinf(yaw);
+  };
+
+  // Rotate the pufferfish with the same tile spin used by the other pieces.
+  setPufferYaw(rotAngle);
+
+  auto rotateOffset = [&](float lx, float lz, float &rx, float &rz) {
+    rx = cosA * lx + sinA * lz;
+    rz = -sinA * lx + cosA * lz;
+  };
+
+  auto rotateDir = [&](float lx, float ly, float lz, float out[3]) {
+    out[0] = cosA * lx + sinA * lz;
+    out[1] = ly;
+    out[2] = -sinA * lx + cosA * lz;
+    normalizeVec3(out);
+  };
 
   auto drawSpherePart = [&](float lx, float ly, float lz, float sx, float sy,
                             float sz, float r, float g, float b, float a) {
     // local offset rotated by the tile's Y rotation
-    float rx = cosA * lx + sinA * lz;
-    float rz = -sinA * lx + cosA * lz;
+    float rx, rz;
+    rotateOffset(lx, lz, rx, rz);
 
     float model[16] = {cosA * sx,   0.0f, -sinA * sz,  0.0f, 0.0f,      sy,
                        0.0f,        0.0f, sinA * sx,   0.0f, cosA * sz, 0.0f,
@@ -961,10 +1028,110 @@ void Renderer::drawPufferfish(float worldX, float worldZ, float brightness) {
     glBindVertexArray(0);
   };
 
-  auto drawSpike = [&](float lx, float ly, float lz) {
+  auto drawCameraFacingSpherePart = [&](float lx, float ly, float lz, float sx,
+                                        float sy, float sz, float r, float g,
+                                        float b, float a) {
+    float rx, rz;
+    rotateOffset(lx, lz, rx, rz);
+
+    float model[16] = {sx,   0.0f, 0.0f, 0.0f, 0.0f, sy,   0.0f, 0.0f,
+                       0.0f, 0.0f, sz,   0.0f, worldX + rx, ly,
+                       worldZ + rz, 1.0f};
+
+    cubeSh->use();
+    cubeSh->setMat4("projection", projMatrix3D);
+    cubeSh->setMat4("view", viewMatrix);
+    cubeSh->setMat4("model", model);
+    cubeSh->setVec4("tileColor", r, g, b, a);
+    cubeSh->setFloat("useTexture", 0.0f);
+
+    glBindVertexArray(pufferVAO);
+    glDrawElements(GL_TRIANGLES, pufferIndexCount, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+  };
+
+  auto drawOrientedSpherePart = [&](const float center[3], const float xAxis[3],
+                                    const float yAxis[3], const float zAxis[3],
+                                    float sx, float sy, float sz, float r,
+                                    float g, float b, float a) {
+    float model[16] = {xAxis[0] * sx,
+                       xAxis[1] * sx,
+                       xAxis[2] * sx,
+                       0.0f,
+                       yAxis[0] * sy,
+                       yAxis[1] * sy,
+                       yAxis[2] * sy,
+                       0.0f,
+                       zAxis[0] * sz,
+                       zAxis[1] * sz,
+                       zAxis[2] * sz,
+                       0.0f,
+                       worldX + center[0],
+                       center[1],
+                       worldZ + center[2],
+                       1.0f};
+
+    cubeSh->use();
+    cubeSh->setMat4("projection", projMatrix3D);
+    cubeSh->setMat4("view", viewMatrix);
+    cubeSh->setMat4("model", model);
+    cubeSh->setVec4("tileColor", r, g, b, a);
+    cubeSh->setFloat("useTexture", 0.0f);
+
+    glBindVertexArray(pufferVAO);
+    glDrawElements(GL_TRIANGLES, pufferIndexCount, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+  };
+
+  auto drawFin = [&](float lx, float ly, float lz,
+                     const float localX[3], const float localY[3],
+                     float sx, float sy, float sz, float r, float g, float b,
+                     float a) {
+    float rx, rz;
+    rotateOffset(lx, lz, rx, rz);
+
+    float xAxis[3], yAxis[3];
+    rotateDir(localX[0], localX[1], localX[2], xAxis);
+    rotateDir(localY[0], localY[1], localY[2], yAxis);
+
+    float zAxis[3];
+    crossVec3(xAxis, yAxis, zAxis);
+    normalizeVec3(zAxis);
+
+    float model[16] = {xAxis[0] * sx,
+                       xAxis[1] * sx,
+                       xAxis[2] * sx,
+                       0.0f,
+                       yAxis[0] * sy,
+                       yAxis[1] * sy,
+                       yAxis[2] * sy,
+                       0.0f,
+                       zAxis[0] * sz,
+                       zAxis[1] * sz,
+                       zAxis[2] * sz,
+                       0.0f,
+                       worldX + rx,
+                       ly,
+                       worldZ + rz,
+                       1.0f};
+
+    cubeSh->use();
+    cubeSh->setMat4("projection", projMatrix3D);
+    cubeSh->setMat4("view", viewMatrix);
+    cubeSh->setMat4("model", model);
+    cubeSh->setVec4("tileColor", r, g, b, a);
+    cubeSh->setFloat("useTexture", 0.0f);
+
+    glBindVertexArray(pufferFinVAO);
+    glDrawElements(GL_TRIANGLES, pufferFinIndexCount, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+  };
+
+  auto drawSpike = [&](float lx, float ly, float lz, float radialScale,
+                       float heightScale) {
     // rotate spike position with the tile
-    float px = cosA * lx + sinA * lz;
-    float pz = -sinA * lx + cosA * lz;
+    float px, pz;
+    rotateOffset(lx, lz, px, pz);
 
     // outward direction from local center
     float dx = lx;
@@ -1000,9 +1167,6 @@ void Renderer::drawPufferfish(float worldX, float worldZ, float brightness) {
     crossVec3(dir, right, forward);
     normalizeVec3(forward);
 
-    float radialScale = 1.0f;
-    float heightScale = 1.0f;
-
     float model[16] = {right[0] * radialScale,
                        right[1] * radialScale,
                        right[2] * radialScale,
@@ -1033,37 +1197,112 @@ void Renderer::drawPufferfish(float worldX, float worldZ, float brightness) {
     glBindVertexArray(0);
   };
 
-  // 1) Main body (top color)
-  drawSpherePart(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.00f * brightness,
-                 0.82f * brightness, 0.35f * brightness, 1.0f);
+  const float rightAxis[3] = {1.0f, 0.0f, 0.0f};
+  const float leftAxis[3] = {-1.0f, 0.0f, 0.0f};
+  const float upAxis[3] = {0.0f, 1.0f, 0.0f};
+  const float backAxis[3] = {0.0f, 0.0f, -1.0f};
+  const float frontAxis[3] = {0.0f, 0.0f, 1.0f};
 
-  // 2) Belly patch (bottom/front lighter color)
-  drawSpherePart(0.0f, -0.08f, 0.08f, 0.72f, 0.55f, 0.72f, 1.00f * brightness,
-                 0.95f * brightness, 0.78f * brightness, 1.0f);
+  // Fins first, so the inflated body visually anchors them.
+  drawFin(0.38f, -0.05f, 0.03f, rightAxis, upAxis, 0.72f, 0.62f, 0.07f,
+          1.00f * brightness, 0.64f * brightness, 0.13f * brightness, 0.98f);
+  drawFin(-0.38f, -0.05f, 0.03f, leftAxis, upAxis, 0.72f, 0.62f, 0.07f,
+          1.00f * brightness, 0.64f * brightness, 0.13f * brightness, 0.98f);
+  drawFin(0.0f, -0.03f, -0.45f, rightAxis, upAxis, 0.68f, 0.86f, 0.07f,
+          1.00f * brightness, 0.73f * brightness, 0.16f * brightness, 0.98f);
+  drawFin(0.0f, 0.03f, -0.48f, rightAxis, frontAxis, 0.50f, 0.42f, 0.06f,
+          0.95f * brightness, 0.50f * brightness, 0.10f * brightness, 0.95f);
 
-  // 3) Eyes (white)
-  drawSpherePart(-0.10f, 0.07f, 0.19f, 0.20f, 0.20f, 0.20f, 1.0f, 1.0f, 1.0f,
+  // Inflated body and large cream belly patch.
+  drawSpherePart(0.0f, 0.0f, 0.0f, 1.18f, 0.95f, 1.02f,
+                 1.00f * brightness, 0.58f * brightness, 0.10f * brightness,
                  1.0f);
-  drawSpherePart(0.10f, 0.07f, 0.19f, 0.20f, 0.20f, 0.20f, 1.0f, 1.0f, 1.0f,
-                 1.0f);
-
-  // 4) Pupils (black)
-  drawSpherePart(-0.10f, 0.07f, 0.27f, 0.08f, 0.08f, 0.08f, 0.05f, 0.05f, 0.05f,
-                 1.0f);
-  drawSpherePart(0.10f, 0.07f, 0.27f, 0.08f, 0.08f, 0.08f, 0.05f, 0.05f, 0.05f,
+  drawSpherePart(0.0f, -0.15f, 0.13f, 0.96f, 0.54f, 0.70f,
+                 1.00f * brightness, 0.88f * brightness, 0.48f * brightness,
                  1.0f);
 
-  // 5) Spikes (upper hemisphere-ish)
-  drawSpike(0.00f, 0.30f, 0.00f);
-  drawSpike(0.16f, 0.22f, 0.10f);
-  drawSpike(-0.16f, 0.22f, 0.10f);
-  drawSpike(0.20f, 0.12f, -0.06f);
-  drawSpike(-0.20f, 0.12f, -0.06f);
-  drawSpike(0.10f, 0.18f, -0.18f);
-  drawSpike(-0.10f, 0.18f, -0.18f);
-  drawSpike(0.24f, 0.04f, 0.14f);
-  drawSpike(-0.24f, 0.04f, 0.14f);
-  drawSpike(0.00f, 0.10f, 0.24f);
+  // Raised face: attach the eye/mouth plane to the fish's own rotating front.
+  float faceNormal[3], faceRight[3];
+  rotateDir(0.0f, 0.0f, 1.0f, faceNormal);
+  rotateDir(1.0f, 0.0f, 0.0f, faceRight);
+  float faceUp[3] = {0.0f, 1.0f, 0.0f};
+
+  auto facePoint = [&](float x, float y, float push, float out[3]) {
+    out[0] = faceNormal[0] * push + faceRight[0] * x + faceUp[0] * y;
+    out[1] = faceNormal[1] * push + faceRight[1] * x + faceUp[1] * y;
+    out[2] = faceNormal[2] * push + faceRight[2] * x + faceUp[2] * y;
+  };
+
+  float leftEye[3], rightEye[3], leftPupil[3], rightPupil[3];
+  float leftHighlight[3], rightHighlight[3], mouth[3], lip[3];
+  facePoint(-0.16f, 0.05f, 0.37f, leftEye);
+  facePoint(0.16f, 0.05f, 0.37f, rightEye);
+  facePoint(-0.16f, 0.05f, 0.43f, leftPupil);
+  facePoint(0.16f, 0.05f, 0.43f, rightPupil);
+  facePoint(-0.205f, 0.105f, 0.455f, leftHighlight);
+  facePoint(0.115f, 0.105f, 0.455f, rightHighlight);
+  facePoint(0.0f, -0.15f, 0.43f, mouth);
+  facePoint(0.0f, -0.125f, 0.455f, lip);
+
+  drawOrientedSpherePart(leftEye, faceRight, faceUp, faceNormal, 0.27f, 0.28f,
+                         0.13f, 1.00f * brightness, 0.86f * brightness,
+                         0.47f * brightness, 1.0f);
+  drawOrientedSpherePart(rightEye, faceRight, faceUp, faceNormal, 0.27f, 0.28f,
+                         0.13f, 1.00f * brightness, 0.86f * brightness,
+                         0.47f * brightness, 1.0f);
+  drawOrientedSpherePart(leftPupil, faceRight, faceUp, faceNormal, 0.15f,
+                         0.15f, 0.050f, 0.16f, 0.07f, 0.025f, 1.0f);
+  drawOrientedSpherePart(rightPupil, faceRight, faceUp, faceNormal, 0.15f,
+                         0.15f, 0.050f, 0.16f, 0.07f, 0.025f, 1.0f);
+  drawOrientedSpherePart(leftHighlight, faceRight, faceUp, faceNormal, 0.045f,
+                         0.045f, 0.018f, 1.0f, 1.0f, 0.92f, 1.0f);
+  drawOrientedSpherePart(rightHighlight, faceRight, faceUp, faceNormal, 0.045f,
+                         0.045f, 0.018f, 1.0f, 1.0f, 0.92f, 1.0f);
+  drawOrientedSpherePart(mouth, faceRight, faceUp, faceNormal, 0.19f, 0.060f,
+                         0.035f, 0.48f * brightness, 0.17f * brightness,
+                         0.045f * brightness, 1.0f);
+  drawOrientedSpherePart(lip, faceRight, faceUp, faceNormal, 0.12f, 0.030f,
+                         0.018f, 0.85f * brightness, 0.35f * brightness,
+                         0.08f * brightness, 1.0f);
+
+  // Markings: yellow top spots and softer brown belly freckles.
+  const float topSpotR = 1.00f * brightness;
+  const float topSpotG = 0.78f * brightness;
+  const float topSpotB = 0.20f * brightness;
+  const float bellySpotR = 0.58f * brightness;
+  const float bellySpotG = 0.36f * brightness;
+  const float bellySpotB = 0.12f * brightness;
+  drawSpherePart(-0.24f, 0.25f, 0.10f, 0.070f, 0.045f, 0.035f, topSpotR,
+                 topSpotG, topSpotB, 1.0f);
+  drawSpherePart(0.03f, 0.30f, 0.13f, 0.080f, 0.050f, 0.035f, topSpotR,
+                 topSpotG, topSpotB, 1.0f);
+  drawSpherePart(0.25f, 0.19f, 0.04f, 0.070f, 0.045f, 0.035f, topSpotR,
+                 topSpotG, topSpotB, 1.0f);
+  drawSpherePart(-0.31f, 0.05f, 0.18f, 0.060f, 0.040f, 0.030f, topSpotR,
+                 topSpotG, topSpotB, 1.0f);
+  drawSpherePart(0.27f, -0.02f, 0.18f, 0.060f, 0.040f, 0.030f, topSpotR,
+                 topSpotG, topSpotB, 1.0f);
+  drawSpherePart(-0.16f, -0.28f, 0.15f, 0.050f, 0.035f, 0.025f, bellySpotR,
+                 bellySpotG, bellySpotB, 1.0f);
+  drawSpherePart(0.10f, -0.31f, 0.12f, 0.050f, 0.035f, 0.025f, bellySpotR,
+                 bellySpotG, bellySpotB, 1.0f);
+  drawSpherePart(0.29f, -0.21f, 0.02f, 0.045f, 0.032f, 0.023f, bellySpotR,
+                 bellySpotG, bellySpotB, 1.0f);
+
+  // Spines mostly on the silhouette/top/back, leaving the face readable.
+  drawSpike(0.00f, 0.38f, -0.06f, 0.86f, 1.05f);
+  drawSpike(0.18f, 0.30f, 0.03f, 0.74f, 0.88f);
+  drawSpike(-0.18f, 0.30f, 0.03f, 0.74f, 0.88f);
+  drawSpike(0.31f, 0.18f, -0.05f, 0.68f, 0.82f);
+  drawSpike(-0.31f, 0.18f, -0.05f, 0.68f, 0.82f);
+  drawSpike(0.30f, 0.02f, -0.20f, 0.64f, 0.78f);
+  drawSpike(-0.30f, 0.02f, -0.20f, 0.64f, 0.78f);
+  drawSpike(0.16f, -0.16f, -0.25f, 0.60f, 0.72f);
+  drawSpike(-0.16f, -0.16f, -0.25f, 0.60f, 0.72f);
+  drawSpike(0.00f, 0.18f, -0.35f, 0.68f, 0.84f);
+  drawSpike(0.00f, -0.28f, -0.10f, 0.60f, 0.76f);
+  drawSpike(0.33f, -0.08f, 0.05f, 0.54f, 0.66f);
+  drawSpike(-0.33f, -0.08f, 0.05f, 0.54f, 0.66f);
 }
 // draw piranha
 void Renderer::drawPiranha(float worldX, float worldZ, bool horizontal,
@@ -1074,26 +1313,153 @@ void Renderer::drawPiranha(float worldX, float worldZ, bool horizontal,
   float cosT = cosf(totalYaw);
   float sinT = sinf(totalYaw);
 
+  auto rotateOffset = [&](float lx, float lz, float &rx, float &rz) {
+    rx = cosT * lx + sinT * lz;
+    rz = -sinT * lx + cosT * lz;
+  };
+
+  auto rotateDir = [&](float lx, float ly, float lz, float out[3]) {
+    out[0] = cosT * lx + sinT * lz;
+    out[1] = ly;
+    out[2] = -sinT * lx + cosT * lz;
+    normalizeVec3(out);
+  };
+
+  auto drawSpherePart = [&](float lx, float ly, float lz, float sx, float sy,
+                            float sz, float r, float g, float b, float a) {
+    float rx, rz;
+    rotateOffset(lx, lz, rx, rz);
+
+    float model[16] = {cosT * sx,   0.0f, -sinT * sz,  0.0f, 0.0f,      sy,
+                       0.0f,        0.0f, sinT * sx,   0.0f, cosT * sz, 0.0f,
+                       worldX + rx, ly,   worldZ + rz, 1.0f};
+
+    cubeSh->use();
+    cubeSh->setMat4("projection", projMatrix3D);
+    cubeSh->setMat4("view", viewMatrix);
+    cubeSh->setMat4("model", model);
+    cubeSh->setVec4("tileColor", r, g, b, a);
+    cubeSh->setFloat("useTexture", 0.0f);
+
+    glBindVertexArray(pufferVAO);
+    glDrawElements(GL_TRIANGLES, pufferIndexCount, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+  };
+
+  auto drawFin = [&](float lx, float ly, float lz, const float localX[3],
+                     const float localY[3], float sx, float sy, float sz,
+                     float r, float g, float b, float a) {
+    float rx, rz;
+    rotateOffset(lx, lz, rx, rz);
+
+    float xAxis[3], yAxis[3];
+    rotateDir(localX[0], localX[1], localX[2], xAxis);
+    rotateDir(localY[0], localY[1], localY[2], yAxis);
+
+    float zAxis[3];
+    crossVec3(xAxis, yAxis, zAxis);
+    normalizeVec3(zAxis);
+
+    float model[16] = {xAxis[0] * sx,
+                       xAxis[1] * sx,
+                       xAxis[2] * sx,
+                       0.0f,
+                       yAxis[0] * sy,
+                       yAxis[1] * sy,
+                       yAxis[2] * sy,
+                       0.0f,
+                       zAxis[0] * sz,
+                       zAxis[1] * sz,
+                       zAxis[2] * sz,
+                       0.0f,
+                       worldX + rx,
+                       ly,
+                       worldZ + rz,
+                       1.0f};
+
+    cubeSh->use();
+    cubeSh->setMat4("projection", projMatrix3D);
+    cubeSh->setMat4("view", viewMatrix);
+    cubeSh->setMat4("model", model);
+    cubeSh->setVec4("tileColor", r, g, b, a);
+    cubeSh->setFloat("useTexture", 0.0f);
+
+    glBindVertexArray(pufferFinVAO);
+    glDrawElements(GL_TRIANGLES, pufferFinIndexCount, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
+  };
+
   float model[16] = {cosT, 0.0f, -sinT, 0.0f, 0.0f,   1.0f, 0.0f,   0.0f,
                      sinT, 0.0f, cosT,  0.0f, worldX, 0.0f, worldZ, 1.0f};
 
-  // 1) Draw cylinder body + tail
+  const float rightAxis[3] = {1.0f, 0.0f, 0.0f};
+  const float leftAxis[3] = {-1.0f, 0.0f, 0.0f};
+  const float upAxis[3] = {0.0f, 1.0f, 0.0f};
+  const float frontAxis[3] = {0.0f, 0.0f, 1.0f};
+  const float backAxis[3] = {0.0f, 0.0f, -1.0f};
+
+  // 1) Draw cylinder body + built-in tail base
   cubeSh->use();
   cubeSh->setMat4("projection", projMatrix3D);
   cubeSh->setMat4("view", viewMatrix);
   cubeSh->setMat4("model", model);
-  cubeSh->setVec4("tileColor", 1.00f * brightness, 0.40f * brightness,
-                  0.12f * brightness, 1.0f);
+  cubeSh->setVec4("tileColor", 0.95f * brightness, 0.30f * brightness,
+                  0.08f * brightness, 1.0f);
   cubeSh->setFloat("useTexture", 0.0f);
 
   glBindVertexArray(piranhaVAO);
   glDrawElements(GL_TRIANGLES, piranhaIndexCount, GL_UNSIGNED_INT, 0);
   glBindVertexArray(0);
 
-  // 2) Teeth stay the same
+  // 2) Layered cartoon features: belly, mouth, eyes, and stronger fins.
+  drawSpherePart(0.0f, -0.07f, 0.03f, 0.18f, 0.070f, 0.22f,
+                 1.00f * brightness, 0.70f * brightness, 0.20f * brightness,
+                 1.0f);
+  drawSpherePart(0.0f, -0.01f, 0.22f, 0.13f, 0.085f, 0.030f,
+                 0.08f * brightness, 0.018f * brightness,
+                 0.012f * brightness, 1.0f);
+  drawSpherePart(-0.075f, 0.085f, 0.19f, 0.052f, 0.052f, 0.035f,
+                 1.0f, 0.95f * brightness, 0.82f * brightness, 1.0f);
+  drawSpherePart(0.075f, 0.085f, 0.19f, 0.052f, 0.052f, 0.035f,
+                 1.0f, 0.95f * brightness, 0.82f * brightness, 1.0f);
+  drawSpherePart(-0.078f, 0.080f, 0.225f, 0.024f, 0.024f, 0.015f,
+                 0.025f, 0.010f, 0.005f, 1.0f);
+  drawSpherePart(0.078f, 0.080f, 0.225f, 0.024f, 0.024f, 0.015f,
+                 0.025f, 0.010f, 0.005f, 1.0f);
+  drawSpherePart(-0.090f, 0.098f, 0.239f, 0.009f, 0.009f, 0.006f,
+                 1.0f, 1.0f, 0.92f, 1.0f);
+  drawSpherePart(0.066f, 0.098f, 0.239f, 0.009f, 0.009f, 0.006f,
+                 1.0f, 1.0f, 0.92f, 1.0f);
+
+  const float finR = 1.00f * brightness;
+  const float finG = 0.63f * brightness;
+  const float finB = 0.08f * brightness;
+  drawFin(0.0f, 0.17f, -0.02f, frontAxis, upAxis, 0.36f, 0.42f, 0.045f,
+          finR, finG, finB, 0.96f);
+  drawFin(0.19f, -0.02f, 0.00f, frontAxis, upAxis, 0.32f, 0.26f, 0.045f,
+          finR, finG, finB, 0.95f);
+  drawFin(-0.19f, -0.02f, 0.00f, backAxis, upAxis, 0.32f, 0.26f, 0.045f,
+          finR, finG, finB, 0.95f);
+  drawFin(0.0f, -0.16f, -0.01f, frontAxis, rightAxis, 0.28f, 0.24f, 0.040f,
+          0.95f * brightness, 0.22f * brightness, 0.05f * brightness, 0.94f);
+  drawFin(0.0f, 0.0f, -0.35f, rightAxis, upAxis, 0.42f, 0.56f, 0.050f,
+          finR, finG, finB, 0.98f);
+
+  // Scale-like dark marks along the body make the special tile read sharper.
+  drawSpherePart(-0.075f, 0.045f, 0.01f, 0.026f, 0.015f, 0.012f,
+                 0.45f * brightness, 0.10f * brightness, 0.035f * brightness,
+                 1.0f);
+  drawSpherePart(0.070f, 0.030f, -0.045f, 0.024f, 0.014f, 0.012f,
+                 0.45f * brightness, 0.10f * brightness, 0.035f * brightness,
+                 1.0f);
+  drawSpherePart(0.0f, 0.055f, -0.095f, 0.022f, 0.013f, 0.011f,
+                 0.45f * brightness, 0.10f * brightness, 0.035f * brightness,
+                 1.0f);
+
+  // 3) Teeth ring around the open mouth.
   auto drawTooth = [&](float lx, float ly, float lz) {
-    float px = cosT * lx + sinT * lz;
-    float pz = -sinT * lx + cosT * lz;
+    float px, pz;
+    rotateOffset(lx, lz, px, pz);
 
     float dx = lx;
     float dy = ly;
@@ -1127,8 +1493,8 @@ void Renderer::drawPiranha(float worldX, float worldZ, bool horizontal,
     crossVec3(dir, right, forward);
     normalizeVec3(forward);
 
-    float radialScale = 0.85f;
-    float heightScale = 0.85f;
+    float radialScale = 0.62f;
+    float heightScale = 0.88f;
 
     float toothModel[16] = {right[0] * radialScale,
                             right[1] * radialScale,
@@ -1160,15 +1526,14 @@ void Renderer::drawPiranha(float worldX, float worldZ, bool horizontal,
     glBindVertexArray(0);
   };
 
-  // front teeth ring
-  drawTooth(0.00f, 0.14f, 0.23f);
-  drawTooth(0.11f, 0.09f, 0.23f);
-  drawTooth(-0.11f, 0.09f, 0.23f);
-  drawTooth(0.15f, 0.00f, 0.21f);
-  drawTooth(-0.15f, 0.00f, 0.21f);
-  drawTooth(0.11f, -0.09f, 0.23f);
-  drawTooth(-0.11f, -0.09f, 0.23f);
-  drawTooth(0.00f, -0.14f, 0.23f);
+  drawTooth(0.00f, 0.12f, 0.245f);
+  drawTooth(0.075f, 0.085f, 0.245f);
+  drawTooth(-0.075f, 0.085f, 0.245f);
+  drawTooth(0.105f, 0.015f, 0.232f);
+  drawTooth(-0.105f, 0.015f, 0.232f);
+  drawTooth(0.075f, -0.075f, 0.245f);
+  drawTooth(-0.075f, -0.075f, 0.245f);
+  drawTooth(0.00f, -0.12f, 0.245f);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

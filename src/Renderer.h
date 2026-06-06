@@ -73,6 +73,9 @@ private:
   // Simple cone mesh for puffer spikes
   unsigned int spikeVAO = 0, spikeVBO = 0, spikeEBO = 0;
   int spikeIndexCount = 0;
+  // Flat diamond mesh for pufferfish fins and tail
+  unsigned int pufferFinVAO = 0, pufferFinVBO = 0, pufferFinEBO = 0;
+  int pufferFinIndexCount = 0;
   // Minimal custom mesh for PIRANHA
   unsigned int piranhaVAO = 0, piranhaVBO = 0, piranhaEBO = 0;
   int piranhaIndexCount = 0;
@@ -89,6 +92,7 @@ private:
   void initCubeMesh();
   void initPufferMesh();
   void initSpikeMesh();
+  void initPufferFinMesh();
   void initPiranhaMesh();
   void initEffectQuad();
 
