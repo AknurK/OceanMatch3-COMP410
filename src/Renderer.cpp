@@ -676,92 +676,90 @@ void Renderer::initPiranhaMesh() {
     inds.push_back(c);
   };
 
-  const int segments = 14;
-  const float radius = 0.16f;
-  const float zFront = 0.18f;
-  const float zBack = -0.14f;
+  struct PiranhaPoint {
+    float x;
+    float y;
+    float z;
+  };
 
-  // -------------------------
-  // 1) Front cap
-  // -------------------------
-  unsigned int frontCenter = (unsigned int)(verts.size() / 8);
-  addVertex(0.0f, 0.0f, zFront, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f);
+  auto appendTri = [&](PiranhaPoint a, PiranhaPoint b, PiranhaPoint c) {
+    float ux = b.x - a.x;
+    float uy = b.y - a.y;
+    float uz = b.z - a.z;
+    float vx = c.x - a.x;
+    float vy = c.y - a.y;
+    float vz = c.z - a.z;
 
-  for (int i = 0; i < segments; i++) {
-    float a = 2.0f * 3.14159265f * (float)i / (float)segments;
-    float x = cosf(a) * radius;
-    float y = sinf(a) * radius;
-    addVertex(x, y, zFront, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
-  }
+    float nx = uy * vz - uz * vy;
+    float ny = uz * vx - ux * vz;
+    float nz = ux * vy - uy * vx;
+    float len = sqrtf(nx * nx + ny * ny + nz * nz);
+    if (len < 1e-5f) {
+      nx = 0.0f;
+      ny = 1.0f;
+      nz = 0.0f;
+    } else {
+      nx /= len;
+      ny /= len;
+      nz /= len;
+    }
 
-  for (int i = 0; i < segments; i++) {
-    int next = (i + 1) % segments;
-    addTri(frontCenter, frontCenter + 1 + i, frontCenter + 1 + next);
-  }
+    unsigned int base = (unsigned int)(verts.size() / 8);
+    addVertex(a.x, a.y, a.z, 0.0f, 0.0f, nx, ny, nz);
+    addVertex(b.x, b.y, b.z, 1.0f, 0.0f, nx, ny, nz);
+    addVertex(c.x, c.y, c.z, 0.5f, 1.0f, nx, ny, nz);
+    addTri(base, base + 1, base + 2);
+  };
 
-  // -------------------------
-  // 2) Back cap
-  // -------------------------
-  unsigned int backCenter = (unsigned int)(verts.size() / 8);
-  addVertex(0.0f, 0.0f, zBack, 0.5f, 0.5f, 0.0f, 0.0f, -1.0f);
+  auto appendQuad = [&](PiranhaPoint a, PiranhaPoint b, PiranhaPoint c,
+                        PiranhaPoint d) {
+    appendTri(a, b, c);
+    appendTri(a, c, d);
+  };
 
-  for (int i = 0; i < segments; i++) {
-    float a = 2.0f * 3.14159265f * (float)i / (float)segments;
-    float x = cosf(a) * radius;
-    float y = sinf(a) * radius;
-    addVertex(x, y, zBack, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f);
-  }
+  auto appendDoubleSidedTri = [&](PiranhaPoint a, PiranhaPoint b,
+                                  PiranhaPoint c) {
+    appendTri(a, b, c);
+    appendTri(c, b, a);
+  };
 
-  for (int i = 0; i < segments; i++) {
-    int next = (i + 1) % segments;
-    addTri(backCenter, backCenter + 1 + next, backCenter + 1 + i);
-  }
+  const float xHalf = 0.16f;
+  const float yHalf = 0.22f;
+  const float zBack = -0.30f;
+  const float zFront = 0.14f;
+  const PiranhaPoint bodyFront[4] = {{-xHalf, -yHalf, zFront},
+                                     {xHalf, -yHalf, zFront},
+                                     {xHalf, yHalf, zFront},
+                                     {-xHalf, yHalf, zFront}};
+  const PiranhaPoint bodyBack[4] = {{-xHalf, -yHalf, zBack},
+                                    {xHalf, -yHalf, zBack},
+                                    {xHalf, yHalf, zBack},
+                                    {-xHalf, yHalf, zBack}};
 
-  // -------------------------
-  // 3) Side surface
-  // -------------------------
-  unsigned int sideBase = (unsigned int)(verts.size() / 8);
+  // Longer rectangular prism body.
+  appendQuad(bodyFront[0], bodyFront[1], bodyFront[2], bodyFront[3]);
+  appendQuad(bodyBack[1], bodyBack[0], bodyBack[3], bodyBack[2]);
+  appendQuad(bodyFront[3], bodyFront[2], bodyBack[2], bodyBack[3]);
+  appendQuad(bodyFront[0], bodyBack[0], bodyBack[1], bodyFront[1]);
+  appendQuad(bodyFront[1], bodyBack[1], bodyBack[2], bodyFront[2]);
+  appendQuad(bodyFront[0], bodyFront[3], bodyBack[3], bodyBack[0]);
 
-  for (int i = 0; i < segments; i++) {
-    float a = 2.0f * 3.14159265f * (float)i / (float)segments;
-    float x = cosf(a) * radius;
-    float y = sinf(a) * radius;
-    float nx = cosf(a);
-    float ny = sinf(a);
+  // Four-sided pyramid head attached to the front of the body.
+  const PiranhaPoint headTip = {0.0f, 0.0f, 0.36f};
+  appendTri(bodyFront[3], bodyFront[2], headTip); // top
+  appendTri(bodyFront[1], bodyFront[0], headTip); // bottom
+  appendTri(bodyFront[2], bodyFront[1], headTip); // right
+  appendTri(bodyFront[0], bodyFront[3], headTip); // left
 
-    // front ring vertex
-    addVertex(x, y, zFront, 0.0f, 0.0f, nx, ny, 0.0f);
-    // back ring vertex
-    addVertex(x, y, zBack, 1.0f, 0.0f, nx, ny, 0.0f);
-  }
+  // Vertical triangular wings that stick outward from the body sides.
+  appendDoubleSidedTri({xHalf, 0.14f, -0.02f}, {xHalf, -0.14f, -0.02f},
+                       {0.38f, 0.0f, -0.02f});
+  appendDoubleSidedTri({-xHalf, -0.14f, -0.02f}, {-xHalf, 0.14f, -0.02f},
+                       {-0.38f, 0.0f, -0.02f});
 
-  for (int i = 0; i < segments; i++) {
-    int next = (i + 1) % segments;
-
-    unsigned int a = sideBase + i * 2;
-    unsigned int b = sideBase + i * 2 + 1;
-    unsigned int c = sideBase + next * 2;
-    unsigned int d = sideBase + next * 2 + 1;
-
-    addTri(a, b, c);
-    addTri(c, b, d);
-  }
-
-  // -------------------------
-  // 4) Tail fin (diamond-like)
-  // -------------------------
-  unsigned int tailBase = (unsigned int)(verts.size() / 8);
-
-  addVertex(0.0f, 0.00f, zBack - 0.18f, 0, 0, 0, 0, -1); // tip
-  addVertex(-0.18f, 0.14f, zBack - 0.02f, 0, 0, 0, 0, -1);
-  addVertex(0.18f, 0.14f, zBack - 0.02f, 0, 0, 0, 0, -1);
-  addVertex(0.18f, -0.14f, zBack - 0.02f, 0, 0, 0, 0, -1);
-  addVertex(-0.18f, -0.14f, zBack - 0.02f, 0, 0, 0, 0, -1);
-
-  addTri(tailBase + 0, tailBase + 1, tailBase + 2);
-  addTri(tailBase + 0, tailBase + 2, tailBase + 3);
-  addTri(tailBase + 0, tailBase + 3, tailBase + 4);
-  addTri(tailBase + 0, tailBase + 4, tailBase + 1);
+  // Single rear triangle tail.
+  appendDoubleSidedTri({0.0f, 0.21f, zBack}, {0.0f, -0.21f, zBack},
+                       {0.0f, 0.0f, zBack - 0.22f});
 
   piranhaIndexCount = (int)inds.size();
 
@@ -1307,8 +1305,8 @@ void Renderer::drawPufferfish(float worldX, float worldZ, float brightness) {
 // draw piranha
 void Renderer::drawPiranha(float worldX, float worldZ, bool horizontal,
                            float brightness) {
-  float localYaw = horizontal ? 0.0f : (3.14159265f * 0.5f);
-  float totalYaw = rotAngle + localYaw;
+  (void)horizontal;
+  float totalYaw = rotAngle;
 
   float cosT = cosf(totalYaw);
   float sinT = sinf(totalYaw);
@@ -1398,85 +1396,25 @@ void Renderer::drawPiranha(float worldX, float worldZ, bool horizontal,
   const float frontAxis[3] = {0.0f, 0.0f, 1.0f};
   const float backAxis[3] = {0.0f, 0.0f, -1.0f};
 
-  // 1) Draw cylinder body + built-in tail base
+  // 1) Draw the red piranha body.
   cubeSh->use();
   cubeSh->setMat4("projection", projMatrix3D);
   cubeSh->setMat4("view", viewMatrix);
   cubeSh->setMat4("model", model);
-  cubeSh->setVec4("tileColor", 0.95f * brightness, 0.30f * brightness,
-                  0.08f * brightness, 1.0f);
+  cubeSh->setVec4("tileColor", 0.88f * brightness, 0.04f * brightness,
+                  0.035f * brightness, 1.0f);
   cubeSh->setFloat("useTexture", 0.0f);
 
   glBindVertexArray(piranhaVAO);
   glDrawElements(GL_TRIANGLES, piranhaIndexCount, GL_UNSIGNED_INT, 0);
   glBindVertexArray(0);
 
-  // 2) Layered cartoon features: belly, mouth, eyes, and stronger fins.
-  drawSpherePart(0.0f, -0.07f, 0.03f, 0.18f, 0.070f, 0.22f,
-                 1.00f * brightness, 0.70f * brightness, 0.20f * brightness,
-                 1.0f);
-  drawSpherePart(0.0f, -0.01f, 0.22f, 0.13f, 0.085f, 0.030f,
-                 0.08f * brightness, 0.018f * brightness,
-                 0.012f * brightness, 1.0f);
-  drawSpherePart(-0.075f, 0.085f, 0.19f, 0.052f, 0.052f, 0.035f,
-                 1.0f, 0.95f * brightness, 0.82f * brightness, 1.0f);
-  drawSpherePart(0.075f, 0.085f, 0.19f, 0.052f, 0.052f, 0.035f,
-                 1.0f, 0.95f * brightness, 0.82f * brightness, 1.0f);
-  drawSpherePart(-0.078f, 0.080f, 0.225f, 0.024f, 0.024f, 0.015f,
-                 0.025f, 0.010f, 0.005f, 1.0f);
-  drawSpherePart(0.078f, 0.080f, 0.225f, 0.024f, 0.024f, 0.015f,
-                 0.025f, 0.010f, 0.005f, 1.0f);
-  drawSpherePart(-0.090f, 0.098f, 0.239f, 0.009f, 0.009f, 0.006f,
-                 1.0f, 1.0f, 0.92f, 1.0f);
-  drawSpherePart(0.066f, 0.098f, 0.239f, 0.009f, 0.009f, 0.006f,
-                 1.0f, 1.0f, 0.92f, 1.0f);
-
-  const float finR = 1.00f * brightness;
-  const float finG = 0.63f * brightness;
-  const float finB = 0.08f * brightness;
-  drawFin(0.0f, 0.17f, -0.02f, frontAxis, upAxis, 0.36f, 0.42f, 0.045f,
-          finR, finG, finB, 0.96f);
-  drawFin(0.19f, -0.02f, 0.00f, frontAxis, upAxis, 0.32f, 0.26f, 0.045f,
-          finR, finG, finB, 0.95f);
-  drawFin(-0.19f, -0.02f, 0.00f, backAxis, upAxis, 0.32f, 0.26f, 0.045f,
-          finR, finG, finB, 0.95f);
-  drawFin(0.0f, -0.16f, -0.01f, frontAxis, rightAxis, 0.28f, 0.24f, 0.040f,
-          0.95f * brightness, 0.22f * brightness, 0.05f * brightness, 0.94f);
-  drawFin(0.0f, 0.0f, -0.35f, rightAxis, upAxis, 0.42f, 0.56f, 0.050f,
-          finR, finG, finB, 0.98f);
-
-  // Scale-like dark marks along the body make the special tile read sharper.
-  drawSpherePart(-0.075f, 0.045f, 0.01f, 0.026f, 0.015f, 0.012f,
-                 0.45f * brightness, 0.10f * brightness, 0.035f * brightness,
-                 1.0f);
-  drawSpherePart(0.070f, 0.030f, -0.045f, 0.024f, 0.014f, 0.012f,
-                 0.45f * brightness, 0.10f * brightness, 0.035f * brightness,
-                 1.0f);
-  drawSpherePart(0.0f, 0.055f, -0.095f, 0.022f, 0.013f, 0.011f,
-                 0.45f * brightness, 0.10f * brightness, 0.035f * brightness,
-                 1.0f);
-
-  // 3) Teeth ring around the open mouth.
   auto drawTooth = [&](float lx, float ly, float lz) {
     float px, pz;
     rotateOffset(lx, lz, px, pz);
 
-    float dx = lx;
-    float dy = ly;
-    float dz = lz;
-    float len = sqrtf(dx * dx + dy * dy + dz * dz);
-    if (len < 1e-5f)
-      return;
-    dx /= len;
-    dy /= len;
-    dz /= len;
-
-    float rdx = cosT * dx + sinT * dz;
-    float rdz = -sinT * dx + cosT * dz;
-    float rdy = dy;
-
-    float dir[3] = {rdx, rdy, rdz};
-    normalizeVec3(dir);
+    float dir[3];
+    rotateDir(lx, ly, lz, dir);
 
     float refUp[3] = {0.0f, 1.0f, 0.0f};
     if (fabsf(dir[1]) > 0.95f) {
@@ -1493,9 +1431,8 @@ void Renderer::drawPiranha(float worldX, float worldZ, bool horizontal,
     crossVec3(dir, right, forward);
     normalizeVec3(forward);
 
-    float radialScale = 0.62f;
-    float heightScale = 0.88f;
-
+    const float radialScale = 0.36f;
+    const float heightScale = 0.50f;
     float toothModel[16] = {right[0] * radialScale,
                             right[1] * radialScale,
                             right[2] * radialScale,
@@ -1517,8 +1454,8 @@ void Renderer::drawPiranha(float worldX, float worldZ, bool horizontal,
     cubeSh->setMat4("projection", projMatrix3D);
     cubeSh->setMat4("view", viewMatrix);
     cubeSh->setMat4("model", toothModel);
-    cubeSh->setVec4("tileColor", 1.0f * brightness, 0.95f * brightness,
-                    0.85f * brightness, 1.0f);
+    cubeSh->setVec4("tileColor", 1.0f * brightness, 0.96f * brightness,
+                    0.86f * brightness, 1.0f);
     cubeSh->setFloat("useTexture", 0.0f);
 
     glBindVertexArray(spikeVAO);
@@ -1526,14 +1463,21 @@ void Renderer::drawPiranha(float worldX, float worldZ, bool horizontal,
     glBindVertexArray(0);
   };
 
-  drawTooth(0.00f, 0.12f, 0.245f);
-  drawTooth(0.075f, 0.085f, 0.245f);
-  drawTooth(-0.075f, 0.085f, 0.245f);
-  drawTooth(0.105f, 0.015f, 0.232f);
-  drawTooth(-0.105f, 0.015f, 0.232f);
-  drawTooth(0.075f, -0.075f, 0.245f);
-  drawTooth(-0.075f, -0.075f, 0.245f);
-  drawTooth(0.00f, -0.12f, 0.245f);
+  // 2) Eyes on the right and left sides of the pyramid head.
+  drawSpherePart(0.12f, 0.075f, 0.225f, 0.098f, 0.098f, 0.046f, 1.0f,
+                 0.94f * brightness, 0.78f * brightness, 1.0f);
+  drawSpherePart(-0.12f, 0.075f, 0.225f, 0.098f, 0.098f, 0.046f, 1.0f,
+                 0.94f * brightness, 0.78f * brightness, 1.0f);
+  drawSpherePart(0.150f, 0.073f, 0.264f, 0.044f, 0.044f, 0.017f, 0.03f,
+                 0.012f, 0.006f, 1.0f);
+  drawSpherePart(-0.150f, 0.073f, 0.264f, 0.044f, 0.044f, 0.017f, 0.03f,
+                 0.012f, 0.006f, 1.0f);
+
+  drawTooth(0.0f, 0.050f, 0.315f);
+  drawTooth(0.050f, 0.010f, 0.305f);
+  drawTooth(-0.050f, 0.010f, 0.305f);
+  drawTooth(0.035f, -0.055f, 0.315f);
+  drawTooth(-0.035f, -0.055f, 0.315f);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
