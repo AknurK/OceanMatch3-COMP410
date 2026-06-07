@@ -8,7 +8,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # ── Packages ────────────────────────────────────────────────────────────────
 find_package(OpenGL REQUIRED)
 find_package(glfw3 REQUIRED)
-find_package(glm REQUIRED)
+find_package(glm QUIET)
+if(NOT glm_FOUND)
+    find_path(GLM_INCLUDE_DIR NAMES glm/glm.hpp)
+    if(NOT GLM_INCLUDE_DIR)
+        message(FATAL_ERROR "GLM headers not found. Install GLM or set GLM_INCLUDE_DIR.")
+    endif()
+    add_library(glm::glm INTERFACE IMPORTED)
+    set_target_properties(glm::glm PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${GLM_INCLUDE_DIR}"
+    )
+endif()
 find_package(JPEG REQUIRED)
 find_package(ZLIB REQUIRED)
 

@@ -406,6 +406,16 @@ void Game::run() {
     int vpX = (cachedFBWidth - vpSize) / 2;
     int vpY = (cachedFBHeight - vpSize) / 2;
     glViewport(vpX, vpY, vpSize, vpSize);
+
+    // The background uses several transparent and additive passes. Restore the
+    // baseline state expected by the board renderer before drawing the game.
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LESS);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_STENCIL_TEST);
     glClear(GL_DEPTH_BUFFER_BIT);
 
     renderer.drawBoard(board, inputMgr.selRow, inputMgr.selCol, swapAnim,
