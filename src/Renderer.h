@@ -36,6 +36,10 @@ public:
 
   void beginFrame();
   void setRotationAngle(float angle);
+  void drawHomeBackdrop();
+  void drawHomeScreen(bool startHovered, bool exitHovered, bool resumeAvailable);
+  void drawHud(int moves, int score, bool menuHovered, bool drawStats,
+               bool drawMenu);
   void drawBoard(const Board &board, int selRow, int selCol,
                  const SwapAnim &swapAnim = {}, const FallAnim &fallAnim = {},
                  const ExplosionAnim &explosionAnim = {});
@@ -59,6 +63,8 @@ private:
 
   unsigned int loadTexture(const char *path);
   void buildOrtho(float w, float h);
+  void drawRect(float x, float y, float width, float height, float r, float g,
+                float b, float a);
   void drawQuad(float x, float y, float size, float r, float g, float b,
                 float a);
   void drawTexturedQuad(unsigned int tex, float x, float y, float size, float r,

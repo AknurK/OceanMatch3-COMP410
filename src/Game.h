@@ -28,7 +28,19 @@ private:
     Shader       shader;       // 2D tile shader
     Shader       cubeShader;   // 3D cube shader
 
+    bool homeScreenActive = true;
+    bool gameStarted = false;
+
     void onSwap(int r1, int c1, int r2, int c2);
+    bool isHomeStartButton(double x, double y) const;
+    bool isHomeExitButton(double x, double y) const;
+    bool isMenuButton(double x, double y) const;
+    void handleHomeClick(double x, double y, int button, int action);
+    void handleMenuClick(double x, double y, int button, int action);
+    void collectScoreFromBoard();
+
+    int moveCount = 0;
+    int scoreCount = 0;
 
     // ── Animation state machine ────────────────────────────────────────────
     enum class SwapState { IDLE, FORWARD, BACK, RESOLVING, EXPLODING, FALLING };

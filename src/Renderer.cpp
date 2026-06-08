@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <iostream>
 #include <vector>
@@ -711,55 +712,98 @@ void Renderer::initPiranhaMesh() {
     addTri(base, base + 1, base + 2);
   };
 
-  auto appendQuad = [&](PiranhaPoint a, PiranhaPoint b, PiranhaPoint c,
-                        PiranhaPoint d) {
-    appendTri(a, b, c);
-    appendTri(a, c, d);
-  };
-
   auto appendDoubleSidedTri = [&](PiranhaPoint a, PiranhaPoint b,
                                   PiranhaPoint c) {
     appendTri(a, b, c);
     appendTri(c, b, a);
   };
 
-  const float xHalf = 0.16f;
-  const float yHalf = 0.22f;
-  const float zBack = -0.30f;
-  const float zFront = 0.14f;
-  const PiranhaPoint bodyFront[4] = {{-xHalf, -yHalf, zFront},
-                                     {xHalf, -yHalf, zFront},
-                                     {xHalf, yHalf, zFront},
-                                     {-xHalf, yHalf, zFront}};
-  const PiranhaPoint bodyBack[4] = {{-xHalf, -yHalf, zBack},
-                                    {xHalf, -yHalf, zBack},
-                                    {xHalf, yHalf, zBack},
-                                    {-xHalf, yHalf, zBack}};
+  constexpr int bodyRings = 14;
+  constexpr int radialSegments = 12;
+  constexpr float pi = 3.14159265f;
+  constexpr float twoPi = 2.0f * pi;
+  constexpr float lengthScale = 0.36f;
+  constexpr float heightScale = 0.28f;
+  constexpr float widthScale = 0.55f;
 
-  // Longer rectangular prism body.
-  appendQuad(bodyFront[0], bodyFront[1], bodyFront[2], bodyFront[3]);
-  appendQuad(bodyBack[1], bodyBack[0], bodyBack[3], bodyBack[2]);
-  appendQuad(bodyFront[3], bodyFront[2], bodyBack[2], bodyBack[3]);
-  appendQuad(bodyFront[0], bodyBack[0], bodyBack[1], bodyFront[1]);
-  appendQuad(bodyFront[1], bodyBack[1], bodyBack[2], bodyFront[2]);
-  appendQuad(bodyFront[0], bodyFront[3], bodyBack[3], bodyBack[0]);
+  auto mapFishPoint = [&](float fishX, float fishY, float fishZ) {
+    return PiranhaPoint{fishZ * widthScale, fishY * heightScale,
+                        fishX * lengthScale};
+  };
 
-  // Four-sided pyramid head attached to the front of the body.
-  const PiranhaPoint headTip = {0.0f, 0.0f, 0.36f};
-  appendTri(bodyFront[3], bodyFront[2], headTip); // top
-  appendTri(bodyFront[1], bodyFront[0], headTip); // bottom
-  appendTri(bodyFront[2], bodyFront[1], headTip); // right
-  appendTri(bodyFront[0], bodyFront[3], headTip); // left
+  auto mapFishNormal = [&](float nx, float ny, float nz, float out[3]) {
+    out[0] = nz;
+    out[1] = ny;
+    out[2] = nx;
+    normalizeVec3(out);
+  };
 
-  // Vertical triangular wings that stick outward from the body sides.
-  appendDoubleSidedTri({xHalf, 0.14f, -0.02f}, {xHalf, -0.14f, -0.02f},
-                       {0.38f, 0.0f, -0.02f});
-  appendDoubleSidedTri({-xHalf, -0.14f, -0.02f}, {-xHalf, 0.14f, -0.02f},
-                       {-0.38f, 0.0f, -0.02f});
+  auto appendFishVertex = [&](float fishX, float fishY, float fishZ, float u,
+                              float v, float nx, float ny, float nz) {
+    PiranhaPoint p = mapFishPoint(fishX, fishY, fishZ);
+    float normal[3];
+    mapFishNormal(nx, ny, nz, normal);
+    addVertex(p.x, p.y, p.z, u, v, normal[0], normal[1], normal[2]);
+  };
 
-  // Single rear triangle tail.
-  appendDoubleSidedTri({0.0f, 0.21f, zBack}, {0.0f, -0.21f, zBack},
-                       {0.0f, 0.0f, zBack - 0.22f});
+  for (int ring = 0; ring <= bodyRings; ++ring) {
+    const float t = (float)ring / (float)bodyRings;
+    const float fishX = -0.92f + t * 1.84f;
+    const float profile = sinf(pi * t);
+    const float headFullness = 0.96f + 0.12f * t + sinf(pi * t) * 0.12f;
+
+    for (int segment = 0; segment < radialSegments; ++segment) {
+      const float angle = twoPi * (float)segment / (float)radialSegments;
+      const float fishY = cosf(angle) * profile * 0.72f * headFullness;
+      const float fishZ = sinf(angle) * profile * 0.22f;
+
+      float nx = cosf(pi * t) * 0.35f;
+      float ny = cosf(angle);
+      float nz = sinf(angle) * 1.7f;
+      float normalLen = sqrtf(nx * nx + ny * ny + nz * nz);
+      if (normalLen > 0.0001f) {
+        nx /= normalLen;
+        ny /= normalLen;
+        nz /= normalLen;
+      }
+
+      appendFishVertex(fishX, fishY, fishZ, t,
+                       (float)segment / (float)radialSegments, nx, ny, nz);
+    }
+  }
+
+  for (int ring = 0; ring < bodyRings; ++ring) {
+    for (int segment = 0; segment < radialSegments; ++segment) {
+      const unsigned int a = ring * radialSegments + segment;
+      const unsigned int b = ring * radialSegments +
+                             (segment + 1) % radialSegments;
+      const unsigned int c = (ring + 1) * radialSegments + segment;
+      const unsigned int d = (ring + 1) * radialSegments +
+                             (segment + 1) % radialSegments;
+      addTri(a, b, d);
+      addTri(a, d, c);
+    }
+  }
+
+  auto appendMappedDoubleSidedTri = [&](float ax, float ay, float az, float bx,
+                                        float by, float bz, float cx, float cy,
+                                        float cz) {
+    appendDoubleSidedTri(mapFishPoint(ax, ay, az), mapFishPoint(bx, by, bz),
+                         mapFishPoint(cx, cy, cz));
+  };
+
+  appendMappedDoubleSidedTri(-0.74f, 0.0f, 0.0f, -1.58f, 0.82f, 0.0f,
+                             -1.34f, 0.0f, 0.0f);
+  appendMappedDoubleSidedTri(-0.74f, 0.0f, 0.0f, -1.34f, 0.0f, 0.0f,
+                             -1.58f, -0.82f, 0.0f);
+  appendMappedDoubleSidedTri(-0.64f, 0.48f, 0.0f, 0.18f, 1.02f, 0.0f,
+                             0.72f, 0.42f, 0.0f);
+  appendMappedDoubleSidedTri(-0.48f, -0.48f, 0.0f, 0.20f, -0.92f, 0.0f,
+                             0.70f, -0.38f, 0.0f);
+  appendMappedDoubleSidedTri(0.18f, -0.04f, 0.16f, -0.18f, -0.48f, 0.62f,
+                             0.48f, -0.18f, 0.18f);
+  appendMappedDoubleSidedTri(0.18f, -0.04f, -0.16f, 0.48f, -0.18f, -0.18f,
+                             -0.18f, -0.48f, -0.62f);
 
   piranhaIndexCount = (int)inds.size();
 
@@ -910,10 +954,10 @@ void Renderer::init(int windowW, int windowH, Shader *shader2D,
 // 2D drawing helpers (unchanged from original)
 // ─────────────────────────────────────────────────────────────────────────────
 
-void Renderer::drawQuad(float x, float y, float size, float r, float g, float b,
-                        float a) {
-  float model[16] = {size, 0.0f, 0.0f, 0.0f, 0.0f, size, 0.0f, 0.0f,
-                     0.0f, 0.0f, 1.0f, 0.0f, x,    y,    0.0f, 1.0f};
+void Renderer::drawRect(float x, float y, float width, float height, float r,
+                        float g, float b, float a) {
+  float model[16] = {width, 0.0f,   0.0f, 0.0f, 0.0f, height, 0.0f, 0.0f,
+                     0.0f,  0.0f,   1.0f, 0.0f, x,    y,      0.0f, 1.0f};
   sh->use();
   sh->setMat4("projection", proj);
   sh->setMat4("model", model);
@@ -922,6 +966,11 @@ void Renderer::drawQuad(float x, float y, float size, float r, float g, float b,
   glBindVertexArray(vao);
   glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
   glBindVertexArray(0);
+}
+
+void Renderer::drawQuad(float x, float y, float size, float r, float g, float b,
+                        float a) {
+  drawRect(x, y, size, size, r, g, b, a);
 }
 
 void Renderer::drawTexturedQuad(unsigned int tex, float x, float y, float size,
@@ -940,6 +989,302 @@ void Renderer::drawTexturedQuad(unsigned int tex, float x, float y, float size,
   glBindVertexArray(vao);
   glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
   glBindVertexArray(0);
+}
+
+void Renderer::drawHomeBackdrop() {
+  glDisable(GL_DEPTH_TEST);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  drawRect(-120.0f, -120.0f, 1140.0f, 1140.0f, 0.010f, 0.055f, 0.075f,
+           0.46f);
+}
+
+void Renderer::drawHomeScreen(bool startHovered, bool exitHovered,
+                              bool resumeAvailable) {
+  glDisable(GL_DEPTH_TEST);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  auto glyphRow = [](char ch, int row) -> const char * {
+    switch (ch) {
+    case 'A': {
+      static const char *rows[] = {"01110", "10001", "10001", "11111",
+                                   "10001", "10001", "10001"};
+      return rows[row];
+    }
+    case 'C': {
+      static const char *rows[] = {"01111", "10000", "10000", "10000",
+                                   "10000", "10000", "01111"};
+      return rows[row];
+    }
+    case 'E': {
+      static const char *rows[] = {"11111", "10000", "10000", "11110",
+                                   "10000", "10000", "11111"};
+      return rows[row];
+    }
+    case 'H': {
+      static const char *rows[] = {"10001", "10001", "10001", "11111",
+                                   "10001", "10001", "10001"};
+      return rows[row];
+    }
+    case 'I': {
+      static const char *rows[] = {"11111", "00100", "00100", "00100",
+                                   "00100", "00100", "11111"};
+      return rows[row];
+    }
+    case 'M': {
+      static const char *rows[] = {"10001", "11011", "10101", "10101",
+                                   "10001", "10001", "10001"};
+      return rows[row];
+    }
+    case 'N': {
+      static const char *rows[] = {"10001", "11001", "10101", "10011",
+                                   "10001", "10001", "10001"};
+      return rows[row];
+    }
+    case 'O': {
+      static const char *rows[] = {"01110", "10001", "10001", "10001",
+                                   "10001", "10001", "01110"};
+      return rows[row];
+    }
+    case 'R': {
+      static const char *rows[] = {"11110", "10001", "10001", "11110",
+                                   "10100", "10010", "10001"};
+      return rows[row];
+    }
+    case 'S': {
+      static const char *rows[] = {"01111", "10000", "10000", "01110",
+                                   "00001", "00001", "11110"};
+      return rows[row];
+    }
+    case 'T': {
+      static const char *rows[] = {"11111", "00100", "00100", "00100",
+                                   "00100", "00100", "00100"};
+      return rows[row];
+    }
+    case 'U': {
+      static const char *rows[] = {"10001", "10001", "10001", "10001",
+                                   "10001", "10001", "01110"};
+      return rows[row];
+    }
+    case 'X': {
+      static const char *rows[] = {"10001", "01010", "00100", "00100",
+                                   "00100", "01010", "10001"};
+      return rows[row];
+    }
+    case '3': {
+      static const char *rows[] = {"11110", "00001", "00001", "01110",
+                                   "00001", "00001", "11110"};
+      return rows[row];
+    }
+    default: {
+      static const char *blank[] = {"00000", "00000", "00000", "00000",
+                                    "00000", "00000", "00000"};
+      return blank[row];
+    }
+    }
+  };
+
+  auto textWidth = [](const char *text, float scale) {
+    float width = 0.0f;
+    for (const char *p = text; *p; ++p) {
+      width += (*p == ' ') ? 3.0f * scale : 5.0f * scale;
+      if (*(p + 1))
+        width += scale;
+    }
+    return width;
+  };
+
+  auto drawText = [&](const char *text, float cx, float y, float scale, float r,
+                      float g, float b, float a) {
+    float x = cx - textWidth(text, scale) * 0.5f;
+    for (const char *p = text; *p; ++p) {
+      if (*p == ' ') {
+        x += 4.0f * scale;
+        continue;
+      }
+      for (int row = 0; row < 7; ++row) {
+        const char *bits = glyphRow(*p, row);
+        for (int col = 0; col < 5; ++col) {
+          if (bits[col] == '1')
+            drawRect(x + col * scale, y + row * scale, scale * 0.96f,
+                     scale * 0.96f, r, g, b, a);
+        }
+      }
+      x += 6.0f * scale;
+    }
+  };
+
+  drawRect(170.0f, 240.0f, 560.0f, 390.0f, 0.025f, 0.15f, 0.20f, 0.58f);
+  drawRect(190.0f, 260.0f, 520.0f, 350.0f, 0.030f, 0.20f, 0.26f, 0.22f);
+
+  drawText("OCEAN MATCH 3", 450.0f, 305.0f, 6.2f, 0.86f, 0.98f, 1.0f,
+           0.96f);
+
+  const auto drawButton = [&](float y, bool hovered, const char *label) {
+    const float glow = hovered ? 1.0f : 0.0f;
+    drawRect(330.0f, y, 240.0f, 60.0f, 0.035f + glow * 0.020f,
+             0.34f + glow * 0.10f, 0.40f + glow * 0.10f, 0.88f);
+    drawText(label, 450.0f, y + 17.0f, 5.8f, 0.92f, 1.0f, 0.96f, 1.0f);
+  };
+
+  drawButton(420.0f, startHovered, resumeAvailable ? "RESUME" : "START");
+  drawButton(505.0f, exitHovered, "EXIT");
+}
+
+void Renderer::drawHud(int moves, int score, bool menuHovered, bool drawStats,
+                       bool drawMenu) {
+  glDisable(GL_DEPTH_TEST);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  auto glyphRow = [](char ch, int row) -> const char * {
+    switch (ch) {
+    case 'C': {
+      static const char *rows[] = {"01111", "10000", "10000", "10000",
+                                   "10000", "10000", "01111"};
+      return rows[row];
+    }
+    case 'E': {
+      static const char *rows[] = {"11111", "10000", "10000", "11110",
+                                   "10000", "10000", "11111"};
+      return rows[row];
+    }
+    case 'M': {
+      static const char *rows[] = {"10001", "11011", "10101", "10101",
+                                   "10001", "10001", "10001"};
+      return rows[row];
+    }
+    case 'N': {
+      static const char *rows[] = {"10001", "11001", "10101", "10011",
+                                   "10001", "10001", "10001"};
+      return rows[row];
+    }
+    case 'O': {
+      static const char *rows[] = {"01110", "10001", "10001", "10001",
+                                   "10001", "10001", "01110"};
+      return rows[row];
+    }
+    case 'R': {
+      static const char *rows[] = {"11110", "10001", "10001", "11110",
+                                   "10100", "10010", "10001"};
+      return rows[row];
+    }
+    case 'S': {
+      static const char *rows[] = {"01111", "10000", "10000", "01110",
+                                   "00001", "00001", "11110"};
+      return rows[row];
+    }
+    case 'U': {
+      static const char *rows[] = {"10001", "10001", "10001", "10001",
+                                   "10001", "10001", "01110"};
+      return rows[row];
+    }
+    case 'V': {
+      static const char *rows[] = {"10001", "10001", "10001", "10001",
+                                   "10001", "01010", "00100"};
+      return rows[row];
+    }
+    case '0': {
+      static const char *rows[] = {"01110", "10001", "10011", "10101",
+                                   "11001", "10001", "01110"};
+      return rows[row];
+    }
+    case '1': {
+      static const char *rows[] = {"00100", "01100", "00100", "00100",
+                                   "00100", "00100", "01110"};
+      return rows[row];
+    }
+    case '2': {
+      static const char *rows[] = {"01110", "10001", "00001", "00010",
+                                   "00100", "01000", "11111"};
+      return rows[row];
+    }
+    case '3': {
+      static const char *rows[] = {"11110", "00001", "00001", "01110",
+                                   "00001", "00001", "11110"};
+      return rows[row];
+    }
+    case '4': {
+      static const char *rows[] = {"00010", "00110", "01010", "10010",
+                                   "11111", "00010", "00010"};
+      return rows[row];
+    }
+    case '5': {
+      static const char *rows[] = {"11111", "10000", "10000", "11110",
+                                   "00001", "00001", "11110"};
+      return rows[row];
+    }
+    case '6': {
+      static const char *rows[] = {"01110", "10000", "10000", "11110",
+                                   "10001", "10001", "01110"};
+      return rows[row];
+    }
+    case '7': {
+      static const char *rows[] = {"11111", "00001", "00010", "00100",
+                                   "01000", "01000", "01000"};
+      return rows[row];
+    }
+    case '8': {
+      static const char *rows[] = {"01110", "10001", "10001", "01110",
+                                   "10001", "10001", "01110"};
+      return rows[row];
+    }
+    case '9': {
+      static const char *rows[] = {"01110", "10001", "10001", "01111",
+                                   "00001", "00001", "01110"};
+      return rows[row];
+    }
+    default: {
+      static const char *blank[] = {"00000", "00000", "00000", "00000",
+                                    "00000", "00000", "00000"};
+      return blank[row];
+    }
+    }
+  };
+
+  auto drawText = [&](const char *text, float x, float y, float scale, float r,
+                      float g, float b, float a) {
+    for (const char *p = text; *p; ++p) {
+      if (*p == ' ') {
+        x += 4.0f * scale;
+        continue;
+      }
+      for (int row = 0; row < 7; ++row) {
+        const char *bits = glyphRow(*p, row);
+        for (int col = 0; col < 5; ++col) {
+          if (bits[col] == '1')
+            drawRect(x + col * scale, y + row * scale, scale * 0.90f,
+                     scale * 0.90f, r, g, b, a);
+        }
+      }
+      x += 6.0f * scale;
+    }
+  };
+
+  char movesText[32];
+  char scoreText[32];
+  std::snprintf(movesText, sizeof(movesText), "MOVES %d", moves);
+  std::snprintf(scoreText, sizeof(scoreText), "SCORES %d", score);
+
+  if (drawStats) {
+    drawRect(8.0f, 14.0f, 250.0f, 88.0f, 0.010f, 0.065f, 0.090f, 0.58f);
+    drawRect(14.0f, 20.0f, 238.0f, 76.0f, 0.030f, 0.180f, 0.225f, 0.28f);
+
+    drawText(movesText, 24.0f, 30.0f, 3.3f, 0.010f, 0.045f, 0.055f, 0.45f);
+    drawText(movesText, 22.0f, 28.0f, 3.3f, 0.90f, 0.99f, 1.00f, 0.96f);
+    drawText(scoreText, 24.0f, 64.0f, 3.3f, 0.010f, 0.045f, 0.055f, 0.45f);
+    drawText(scoreText, 22.0f, 62.0f, 3.3f, 0.92f, 1.00f, 0.84f, 0.96f);
+  }
+
+  if (drawMenu) {
+    const float glow = menuHovered ? 1.0f : 0.0f;
+    drawRect(760.0f, 832.0f, 115.0f, 46.0f, 0.010f, 0.065f, 0.090f, 0.58f);
+    drawRect(766.0f, 838.0f, 103.0f, 34.0f, 0.030f + glow * 0.025f,
+             0.180f + glow * 0.100f, 0.225f + glow * 0.100f, 0.88f);
+    drawText("MENU", 785.0f, 847.0f, 2.8f, 0.010f, 0.045f, 0.055f, 0.45f);
+    drawText("MENU", 783.0f, 845.0f, 2.8f, 0.92f, 1.00f, 0.96f, 0.98f);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1396,13 +1741,13 @@ void Renderer::drawPiranha(float worldX, float worldZ, bool horizontal,
   const float frontAxis[3] = {0.0f, 0.0f, 1.0f};
   const float backAxis[3] = {0.0f, 0.0f, -1.0f};
 
-  // 1) Draw the red piranha body.
+  // 1) Draw the gray piranha body.
   cubeSh->use();
   cubeSh->setMat4("projection", projMatrix3D);
   cubeSh->setMat4("view", viewMatrix);
   cubeSh->setMat4("model", model);
-  cubeSh->setVec4("tileColor", 0.88f * brightness, 0.04f * brightness,
-                  0.035f * brightness, 1.0f);
+  cubeSh->setVec4("tileColor", 0.46f * brightness, 0.48f * brightness,
+                  0.50f * brightness, 1.0f);
   cubeSh->setFloat("useTexture", 0.0f);
 
   glBindVertexArray(piranhaVAO);
@@ -1431,8 +1776,8 @@ void Renderer::drawPiranha(float worldX, float worldZ, bool horizontal,
     crossVec3(dir, right, forward);
     normalizeVec3(forward);
 
-    const float radialScale = 0.36f;
-    const float heightScale = 0.50f;
+    const float radialScale = 0.22f;
+    const float heightScale = 0.30f;
     float toothModel[16] = {right[0] * radialScale,
                             right[1] * radialScale,
                             right[2] * radialScale,
@@ -1463,21 +1808,21 @@ void Renderer::drawPiranha(float worldX, float worldZ, bool horizontal,
     glBindVertexArray(0);
   };
 
-  // 2) Eyes on the right and left sides of the pyramid head.
-  drawSpherePart(0.12f, 0.075f, 0.225f, 0.098f, 0.098f, 0.046f, 1.0f,
+  // 2) Eyes and teeth on the tapered front of the procedural fish body.
+  drawSpherePart(0.12f, 0.080f, 0.245f, 0.090f, 0.095f, 0.040f, 1.0f,
                  0.94f * brightness, 0.78f * brightness, 1.0f);
-  drawSpherePart(-0.12f, 0.075f, 0.225f, 0.098f, 0.098f, 0.046f, 1.0f,
+  drawSpherePart(-0.12f, 0.080f, 0.245f, 0.090f, 0.095f, 0.040f, 1.0f,
                  0.94f * brightness, 0.78f * brightness, 1.0f);
-  drawSpherePart(0.150f, 0.073f, 0.264f, 0.044f, 0.044f, 0.017f, 0.03f,
+  drawSpherePart(0.148f, 0.078f, 0.272f, 0.040f, 0.040f, 0.015f, 0.03f,
                  0.012f, 0.006f, 1.0f);
-  drawSpherePart(-0.150f, 0.073f, 0.264f, 0.044f, 0.044f, 0.017f, 0.03f,
+  drawSpherePart(-0.148f, 0.078f, 0.272f, 0.040f, 0.040f, 0.015f, 0.03f,
                  0.012f, 0.006f, 1.0f);
 
-  drawTooth(0.0f, 0.050f, 0.315f);
-  drawTooth(0.050f, 0.010f, 0.305f);
-  drawTooth(-0.050f, 0.010f, 0.305f);
-  drawTooth(0.035f, -0.055f, 0.315f);
-  drawTooth(-0.035f, -0.055f, 0.315f);
+  drawTooth(0.0f, 0.045f, 0.335f);
+  drawTooth(0.042f, 0.006f, 0.325f);
+  drawTooth(-0.042f, 0.006f, 0.325f);
+  drawTooth(0.030f, -0.045f, 0.335f);
+  drawTooth(-0.030f, -0.045f, 0.335f);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
