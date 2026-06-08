@@ -43,15 +43,15 @@ void main() {
     float sunGlow = exp(-length(worldPos.xz - sunCenter) * 0.040);
     float distanceFade = exp(-length(worldPos - cameraPos) * 0.012);
 
-    vec3 midTurquoise = vec3(0.0, 0.55, 0.65);
-    vec3 shallowCyan = vec3(0.0, 0.85, 0.95);
+    vec3 midTurquoise = vec3(0.0, 0.62, 0.70);
+    vec3 shallowCyan = vec3(0.05, 0.90, 0.96);
     vec3 highlight = vec3(0.8, 1.0, 0.95);
     vec3 color = mix(midTurquoise, vec3(0.55, 1.0, 0.95), fresnel);
     color = mix(color, shallowCyan, sunGlow * 0.24);
     float waveFacing = 1.0 - abs(normal.y);
     color *= mix(0.82, 1.12, waveFacing);
-    color += highlight * (softRippleLines * 1.35 + spec * 0.80);
-    float alpha = (0.20 + waveFacing * 0.14 + fresnel * 0.12
+    color += highlight * (softRippleLines * 1.55 + spec * 0.88);
+    float alpha = (0.23 + waveFacing * 0.15 + fresnel * 0.13
         + surfaceLight * 0.055 + sunGlow * 0.070 + spec * 0.10)
         * distanceFade;
     fragColor = vec4(color, alpha);

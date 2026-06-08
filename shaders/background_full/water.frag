@@ -30,28 +30,28 @@ float softBeam(vec2 uv, float center, float slope, float width) {
 }
 
 void main() {
-    vec3 topColor = vec3(0.02, 0.82, 0.90);
-    vec3 midColor = vec3(0.0, 0.48, 0.58);
-    vec3 deepColor = vec3(0.0, 0.19, 0.27);
+    vec3 topColor = vec3(0.06, 0.88, 0.94);
+    vec3 midColor = vec3(0.0, 0.61, 0.68);
+    vec3 deepColor = vec3(0.0, 0.27, 0.34);
 
     float lowerBlend = smoothstep(0.0, 0.48, screenUv.y);
     float upperBlend = smoothstep(0.42, 1.0, screenUv.y);
     vec3 waterColor = mix(deepColor, midColor, lowerBlend);
     waterColor = mix(waterColor, topColor, upperBlend);
     float horizonHaze = exp(-pow((screenUv.y - 0.43) / 0.25, 2.0));
-    waterColor = mix(waterColor, midColor, horizonHaze * 0.66);
+    waterColor = mix(waterColor, vec3(0.01, 0.66, 0.72), horizonHaze * 0.72);
 
     vec2 surfaceUv = screenUv * vec2(7.0, 4.0);
     float surfaceNoise1 = noise(surfaceUv + vec2(time * 0.035, time * 0.018));
     float surfaceNoise2 = noise(surfaceUv * 1.8 + vec2(-time * 0.025, time * 0.03));
     float surfacePattern = smoothstep(0.58, 0.88, surfaceNoise1 * 0.62 + surfaceNoise2 * 0.38);
     float surfaceMask = smoothstep(0.48, 0.98, screenUv.y);
-    waterColor += vec3(0.03, 0.11, 0.12) * surfacePattern * surfaceMask;
+    waterColor += vec3(0.05, 0.14, 0.15) * surfacePattern * surfaceMask;
 
     vec2 sunScreenPosition = vec2(0.40 + sunDirection.x * 0.04, 1.02);
     vec2 sunDelta = (screenUv - sunScreenPosition) / vec2(0.58, 0.34);
-    float sunGlow = exp(-dot(sunDelta, sunDelta) * 3.4);
-    waterColor += vec3(0.36, 0.43, 0.34) * sunGlow;
+    float sunGlow = exp(-dot(sunDelta, sunDelta) * 2.5);
+    waterColor += vec3(0.42, 0.50, 0.42) * sunGlow;
 
     float scattering = noise(screenUv * vec2(5.0, 8.0) + time * 0.008);
     waterColor += vec3(0.0, 0.018, 0.022) * scattering;

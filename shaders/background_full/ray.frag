@@ -21,6 +21,6 @@ void main() {
     float sunlightFalloff = exp(-depthBelowSurface * 0.18);
     float sunAlignment = 0.85 + 0.15 * clamp(-sunDirection.y, 0.0, 1.0);
     float alpha = horizontal * vertical * shimmer * fogFade * depthFade
-        * sunlightFalloff * sunAlignment * 0.18;
-    fragColor = vec4(vec3(0.78, 0.98, 1.0), alpha);
+        * sunlightFalloff * sunAlignment * 0.25;
+    fragColor = vec4(vec3(0.84, 1.0, 0.98), alpha);
 }
