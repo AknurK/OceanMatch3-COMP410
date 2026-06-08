@@ -8,6 +8,8 @@ public:
   ~OceanBackgroundRenderer();
 
   void init();
+  void updateCameraControls(float yawDeltaDeg, float forwardDelta,
+                            float strafeDelta, bool reset);
   void render(float time, int framebufferWidth, int framebufferHeight);
 
 private:

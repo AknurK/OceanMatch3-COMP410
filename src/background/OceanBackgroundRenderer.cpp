@@ -1264,6 +1264,24 @@ OceanBackgroundRenderer::OceanBackgroundRenderer() = default;
 OceanBackgroundRenderer::~OceanBackgroundRenderer() = default;
 void OceanBackgroundRenderer::init() { state = std::make_unique<State>(); }
 
+void OceanBackgroundRenderer::updateCameraControls(float yawDeltaDeg,
+                                                   float forwardDelta,
+                                                   float strafeDelta,
+                                                   bool reset) {
+  if (!state)
+    return;
+
+  if (reset) {
+    state->camera.resetInteractiveControls();
+    return;
+  }
+
+  if (yawDeltaDeg != 0.0f)
+    state->camera.addYawOffset(yawDeltaDeg);
+  if (forwardDelta != 0.0f || strafeDelta != 0.0f)
+    state->camera.addMovement(forwardDelta, strafeDelta);
+}
+
 void OceanBackgroundRenderer::render(float time, int framebufferWidth, int framebufferHeight) {
   if (!state || framebufferWidth <= 0 || framebufferHeight <= 0) return;
   State &s = *state;

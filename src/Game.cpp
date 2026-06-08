@@ -43,6 +43,51 @@ void Game::framebufferCB(GLFWwindow *w, int fbWidth, int fbHeight) {
       (winW > 0) ? (float)fbWidth / (float)winW : 1.0f;
 }
 
+void Game::updateBackgroundCameraControls(float dt) {
+  if (!window)
+    return;
+
+  double mx, my;
+  glfwGetCursorPos(window, &mx, &my);
+
+  float yawDeltaDeg = 0.0f;
+  const bool rightMouseDown =
+      glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+
+  if (rightMouseDown) {
+    if (backgroundLookActive) {
+      yawDeltaDeg = static_cast<float>(mx - lastBackgroundMouseX) * 0.045f;
+    } else {
+      backgroundLookActive = true;
+    }
+  } else {
+    backgroundLookActive = false;
+  }
+
+  lastBackgroundMouseX = mx;
+
+  auto pressed = [this](int key) {
+    return glfwGetKey(window, key) == GLFW_PRESS;
+  };
+
+  float forward = 0.0f;
+  float strafe = 0.0f;
+  if (pressed(GLFW_KEY_W))
+    forward += 1.0f;
+  if (pressed(GLFW_KEY_S))
+    forward -= 1.0f;
+  if (pressed(GLFW_KEY_D))
+    strafe += 1.0f;
+  if (pressed(GLFW_KEY_A))
+    strafe -= 1.0f;
+
+  constexpr float forwardSpeed = 0.9f;
+  constexpr float strafeSpeed = 0.55f;
+  oceanBackground.updateCameraControls(
+      yawDeltaDeg, forward * forwardSpeed * dt, strafe * strafeSpeed * dt,
+      pressed(GLFW_KEY_R));
+}
+
 bool Game::init() {
   s_instance = this;
 
@@ -352,6 +397,7 @@ void Game::run() {
     lastTime = now;
 
     glfwPollEvents();
+    updateBackgroundCameraControls(dt);
 
     // Update animation state machine
     updateAnimation(dt);
