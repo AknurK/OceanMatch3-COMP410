@@ -432,121 +432,6 @@ ShellMesh createShellMesh(int type) {
     return mesh;
 }
 
-ShellMesh createCrabMesh() {
-    std::vector<glm::vec3> positions;
-    std::vector<unsigned int> indices;
-
-    const auto appendEllipsoid = [&positions, &indices](
-        const glm::vec3& center, const glm::vec3& radius, int rings, int segments
-    ) {
-        const unsigned int base = static_cast<unsigned int>(positions.size());
-        for (int ring = 0; ring <= rings; ++ring) {
-            const float v = static_cast<float>(ring) / rings;
-            const float phi = v * glm::pi<float>();
-            for (int segment = 0; segment <= segments; ++segment) {
-                const float u = static_cast<float>(segment) / segments;
-                const float theta = u * glm::two_pi<float>();
-                positions.push_back(center + glm::vec3(
-                    std::sin(phi) * std::cos(theta) * radius.x,
-                    std::cos(phi) * radius.y,
-                    std::sin(phi) * std::sin(theta) * radius.z
-                ));
-            }
-        }
-        const int row = segments + 1;
-        for (int ring = 0; ring < rings; ++ring) {
-            for (int segment = 0; segment < segments; ++segment) {
-                const unsigned int a = base + ring * row + segment;
-                const unsigned int b = a + 1;
-                const unsigned int c = a + row;
-                const unsigned int d = c + 1;
-                indices.insert(indices.end(), {a, d, b, a, c, d});
-            }
-        }
-    };
-
-    const auto appendLimb = [&positions, &indices](
-        const glm::vec3& start, const glm::vec3& end, float width
-    ) {
-        const glm::vec3 direction = glm::normalize(end - start);
-        const glm::vec3 side = glm::normalize(glm::cross(direction, glm::vec3(0.0f, 1.0f, 0.0f))) * width;
-        const glm::vec3 up(0.0f, width * 0.55f, 0.0f);
-        const unsigned int base = static_cast<unsigned int>(positions.size());
-        positions.insert(positions.end(), {
-            start - side - up, start + side - up, start + side + up, start - side + up,
-            end - side - up, end + side - up, end + side + up, end - side + up
-        });
-        constexpr unsigned int local[] = {
-            0,1,2,0,2,3, 4,6,5,4,7,6,
-            0,4,5,0,5,1, 1,5,6,1,6,2,
-            2,6,7,2,7,3, 3,7,4,3,4,0
-        };
-        for (unsigned int index : local) {
-            indices.push_back(base + index);
-        }
-    };
-
-    appendEllipsoid({0.0f, 0.22f, 0.0f}, {0.72f, 0.24f, 0.48f}, 8, 16);
-    for (int sideSign : {-1, 1}) {
-        for (int leg = 0; leg < 4; ++leg) {
-            const float z = -0.34f + leg * 0.22f;
-            const glm::vec3 hip(sideSign * 0.48f, 0.20f, z);
-            const glm::vec3 knee(sideSign * (0.82f + leg * 0.035f), 0.11f, z + (leg - 1.5f) * 0.08f);
-            const glm::vec3 foot(sideSign * (1.08f + leg * 0.04f), 0.035f, z + (leg - 1.5f) * 0.16f);
-            appendLimb(hip, knee, 0.075f);
-            appendLimb(knee, foot, 0.055f);
-        }
-        const glm::vec3 armStart(sideSign * 0.45f, 0.25f, -0.30f);
-        const glm::vec3 armEnd(sideSign * 0.92f, 0.30f, -0.62f);
-        appendLimb(armStart, armEnd, 0.10f);
-        appendEllipsoid(armEnd + glm::vec3(sideSign * 0.18f, 0.02f, -0.08f), {0.28f, 0.16f, 0.22f}, 5, 10);
-        appendLimb(
-            armEnd + glm::vec3(sideSign * 0.22f, 0.05f, -0.10f),
-            armEnd + glm::vec3(sideSign * 0.48f, 0.10f, -0.25f),
-            0.055f
-        );
-    }
-
-    std::vector<glm::vec3> normals(positions.size(), glm::vec3(0.0f));
-    for (size_t i = 0; i < indices.size(); i += 3) {
-        const unsigned int a = indices[i];
-        const unsigned int b = indices[i + 1];
-        const unsigned int c = indices[i + 2];
-        const glm::vec3 normal = glm::cross(positions[b] - positions[a], positions[c] - positions[a]);
-        normals[a] += normal;
-        normals[b] += normal;
-        normals[c] += normal;
-    }
-    std::vector<float> vertices;
-    vertices.reserve(positions.size() * 6);
-    for (size_t i = 0; i < positions.size(); ++i) {
-        const glm::vec3 normal = glm::length(normals[i]) > 0.0001f
-            ? glm::normalize(normals[i])
-            : glm::vec3(0.0f, 1.0f, 0.0f);
-        vertices.insert(vertices.end(), {
-            positions[i].x, positions[i].y, positions[i].z,
-            normal.x, normal.y, normal.z
-        });
-    }
-
-    ShellMesh mesh;
-    mesh.indexCount = static_cast<GLsizei>(indices.size());
-    glGenVertexArrays(1, &mesh.vao);
-    glGenBuffers(1, &mesh.vbo);
-    glGenBuffers(1, &mesh.ebo);
-    glBindVertexArray(mesh.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), nullptr);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), reinterpret_cast<void*>(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-    glBindVertexArray(0);
-    return mesh;
-}
-
 ShellMesh createCoralMesh(int type) {
     std::vector<glm::vec3> positions;
     std::vector<unsigned int> indices;
@@ -1320,7 +1205,7 @@ struct OceanBackgroundRenderer::State {
   TransparentMeshes transparentMeshes;
   ParticleMesh particles;
   InstancedPebbles pebbles;
-  ShellMesh spiralShell, clamShell, scallopShell, brokenShell, crabMesh;
+  ShellMesh spiralShell, clamShell, scallopShell, brokenShell;
   ShellMesh branchingCoral, fanCoral, brainCoral, seaweedCoral, tubeCoral;
   ShellMesh bottleMesh, shipBoxMesh, shipHullMesh, shipSailMesh;
   ContactShadowMesh contactShadow;
@@ -1348,7 +1233,7 @@ struct OceanBackgroundRenderer::State {
         seaweed(std::make_unique<ocean_bg::BackgroundModel>("assets/background/models/seaweed/seaweed.fbx", true)),
         transparentMeshes(createTransparentMeshes()), particles(createParticleMesh()),
         pebbles(createInstancedPebbles()), spiralShell(createShellMesh(0)), clamShell(createShellMesh(1)),
-        scallopShell(createShellMesh(2)), brokenShell(createShellMesh(3)), crabMesh(createCrabMesh()),
+        scallopShell(createShellMesh(2)), brokenShell(createShellMesh(3)),
         branchingCoral(createCoralMesh(0)), fanCoral(createCoralMesh(1)), brainCoral(createCoralMesh(2)),
         seaweedCoral(createCoralMesh(3)), tubeCoral(createCoralMesh(4)), bottleMesh(createBottleMesh()),
         shipBoxMesh(createBoxMesh()), shipHullMesh(createShipHullMesh()), shipSailMesh(createShipSailMesh()),
@@ -1370,7 +1255,7 @@ struct OceanBackgroundRenderer::State {
   ~State() {
     destroyFloorMesh(floor); destroyFullscreenMesh(fullscreen); destroyTransparentMeshes(transparentMeshes);
     destroyParticleMesh(particles); destroyInstancedPebbles(pebbles);
-    for (const ShellMesh* mesh : {&brokenShell,&scallopShell,&clamShell,&spiralShell,&crabMesh,&tubeCoral,&seaweedCoral,&brainCoral,&fanCoral,&branchingCoral,&bottleMesh,&shipBoxMesh,&shipHullMesh,&shipSailMesh}) destroyShellMesh(*mesh);
+    for (const ShellMesh* mesh : {&brokenShell,&scallopShell,&clamShell,&spiralShell,&tubeCoral,&seaweedCoral,&brainCoral,&fanCoral,&branchingCoral,&bottleMesh,&shipBoxMesh,&shipHullMesh,&shipSailMesh}) destroyShellMesh(*mesh);
     destroyContactShadowMesh(contactShadow); destroyReefFishMesh(blueTangFish); destroyReefFishMesh(reefFish); destroyDistantFishSchool(distantSchool);
   }
 };
@@ -1385,7 +1270,7 @@ void OceanBackgroundRenderer::render(float time, int framebufferWidth, int frame
   auto &camera=s.camera; auto &causticsMode=s.causticsMode; auto &causticsDebug=s.causticsDebug; auto &rayTracedCausticsEnabled=s.rayTracedCausticsEnabled;
   auto &waterShader=s.waterShader; auto &floorShader=s.floorShader; auto &rockShader=s.rockShader; auto &animalShader=s.animalShader; auto &schoolFishShader=s.schoolFishShader; auto &decorShader=s.decorShader; auto &contactShadowShader=s.contactShadowShader; auto &pebbleShader=s.pebbleShader; auto &surfaceShader=s.surfaceShader; auto &rayShader=s.rayShader; auto &particleShader=s.particleShader; auto &algaeShader=s.algaeShader; auto &glassShader=s.glassShader;
   auto &fullscreen=s.fullscreen; auto &floor=s.floor; auto &clownfish=*s.clownfish; auto &dolphin=*s.dolphin; auto &starfish=*s.starfish; auto &seaweed=*s.seaweed; auto &rockModels=s.rockModels; auto &shipModel=s.shipModel; auto &octopusModelAsset=s.octopusModelAsset; auto &turtleModelAsset=s.turtleModelAsset;
-  auto &transparentMeshes=s.transparentMeshes; auto &particles=s.particles; auto &pebbles=s.pebbles; auto &spiralShell=s.spiralShell; auto &clamShell=s.clamShell; auto &scallopShell=s.scallopShell; auto &brokenShell=s.brokenShell; auto &crabMesh=s.crabMesh; auto &branchingCoral=s.branchingCoral; auto &fanCoral=s.fanCoral; auto &brainCoral=s.brainCoral; auto &seaweedCoral=s.seaweedCoral; auto &tubeCoral=s.tubeCoral; auto &bottleMesh=s.bottleMesh; auto &shipBoxMesh=s.shipBoxMesh; auto &shipHullMesh=s.shipHullMesh; auto &shipSailMesh=s.shipSailMesh; auto &contactShadow=s.contactShadow; auto &reefFish=s.reefFish; auto &blueTangFish=s.blueTangFish; auto &distantSchool=s.distantSchool;
+  auto &transparentMeshes=s.transparentMeshes; auto &particles=s.particles; auto &pebbles=s.pebbles; auto &spiralShell=s.spiralShell; auto &clamShell=s.clamShell; auto &scallopShell=s.scallopShell; auto &brokenShell=s.brokenShell; auto &branchingCoral=s.branchingCoral; auto &fanCoral=s.fanCoral; auto &brainCoral=s.brainCoral; auto &seaweedCoral=s.seaweedCoral; auto &tubeCoral=s.tubeCoral; auto &bottleMesh=s.bottleMesh; auto &shipBoxMesh=s.shipBoxMesh; auto &shipHullMesh=s.shipHullMesh; auto &shipSailMesh=s.shipSailMesh; auto &contactShadow=s.contactShadow; auto &reefFish=s.reefFish; auto &blueTangFish=s.blueTangFish; auto &distantSchool=s.distantSchool;
   const float currentFrame=time; const float deltaTime=currentFrame-s.lastFrame; s.lastFrame=currentFrame; updateDistantFishSchool(distantSchool, deltaTime);
   const glm::mat4 model(1.0f);
   const glm::mat4 view = camera.viewMatrix();
@@ -1712,41 +1597,6 @@ void OceanBackgroundRenderer::render(float time, int framebufferWidth, int frame
       static_cast<GLsizei>(distantSchool.fish.size())
   );
 
-  constexpr glm::vec3 crabBases[] = {
-      {-2.6f, 0.025f, 1.15f},
-      { 3.7f, 0.025f,-1.65f},
-      {-5.1f, 0.025f,-5.75f}
-  };
-  constexpr float crabHeadings[] = {0.18f, 2.45f, -1.10f};
-  glm::vec3 crabPositions[3];
-  for (int i = 0; i < 3; ++i) {
-      const float cycle = std::fmod(currentFrame + static_cast<float>(i) * 2.7f, 10.0f);
-      const float walkPhase = std::min(cycle, 7.0f) / 7.0f * glm::two_pi<float>();
-      const float sideways = std::sin(walkPhase) * (0.55f + static_cast<float>(i) * 0.12f);
-      const glm::vec3 sideDirection(std::cos(crabHeadings[i]), 0.0f, -std::sin(crabHeadings[i]));
-      crabPositions[i] = crabBases[i] + sideDirection * sideways;
-      crabPositions[i].y = 0.20f;
-  }
-
-  glEnable(GL_BLEND);
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  glDepthMask(GL_FALSE);
-  contactShadowShader.use();
-  contactShadowShader.setMat4("view", view);
-  contactShadowShader.setMat4("projection", projection);
-  contactShadowShader.setVec3("cameraPos", camera.position());
-  glBindVertexArray(contactShadow.vao);
-  for (int i = 0; i < 3; ++i) {
-      glm::mat4 shadowModel(1.0f);
-      shadowModel = glm::translate(shadowModel, glm::vec3(crabPositions[i].x, 0.16f, crabPositions[i].z));
-      shadowModel = glm::rotate(shadowModel, crabHeadings[i], glm::vec3(0.0f, 1.0f, 0.0f));
-      shadowModel = glm::scale(shadowModel, glm::vec3(0.85f, 1.0f, 0.55f));
-      contactShadowShader.setMat4("model", shadowModel);
-      glDrawArrays(GL_TRIANGLES, 0, contactShadow.vertexCount);
-  }
-  glDepthMask(GL_TRUE);
-  glDisable(GL_BLEND);
-
   decorShader.use();
   decorShader.setMat4("view", view);
   decorShader.setMat4("projection", projection);
@@ -1930,23 +1780,6 @@ void OceanBackgroundRenderer::render(float time, int framebufferWidth, int frame
       }
   }
   decorShader.setInt("shellDetail", 0);
-
-  constexpr glm::vec3 crabColors[] = {
-      {0.58f,0.20f,0.10f},
-      {0.68f,0.29f,0.12f},
-      {0.50f,0.17f,0.09f}
-  };
-  glBindVertexArray(crabMesh.vao);
-  for (int i = 0; i < 3; ++i) {
-      const float cycle = std::fmod(currentFrame + static_cast<float>(i) * 2.7f, 10.0f);
-      glm::mat4 crabModel(1.0f);
-      crabModel = glm::translate(crabModel, crabPositions[i]);
-      crabModel = glm::rotate(crabModel, crabHeadings[i], glm::vec3(0.0f, 1.0f, 0.0f));
-      crabModel = glm::scale(crabModel, glm::vec3(0.34f + i * 0.035f));
-      decorShader.setMat4("model", crabModel);
-      decorShader.setVec3("baseColor", crabColors[i]);
-      glDrawElements(GL_TRIANGLES, crabMesh.indexCount, GL_UNSIGNED_INT, nullptr);
-  }
 
   constexpr glm::vec3 seaweedPositions[] = {
       {-9.5f,0.0f,-3.0f},{-7.8f,0.0f,-5.5f},{-9.0f,0.0f,-9.0f},
