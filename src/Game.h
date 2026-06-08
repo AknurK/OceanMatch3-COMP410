@@ -47,6 +47,7 @@ private:
     float fallOffsets[BOARD_ROWS][BOARD_COLS] = {};
     static constexpr float FALL_SPEED = 10.0f; // rows per second
 
+    void updateBackgroundCameraControls(float dt);
     void updateAnimation(float dt);
     void computeFallOffsets(const std::vector<std::vector<Cell>>& preGravity);
 
@@ -54,6 +55,8 @@ private:
     int   cachedFBWidth  = 0;
     int   cachedFBHeight = 0;
     float cachedPixelScale = 1.0f; // framebuffer-pixels / logical-pixels
+    bool  backgroundLookActive = false;
+    double lastBackgroundMouseX = 0.0;
 
     // GLFW static callbacks
     static Game* s_instance;
