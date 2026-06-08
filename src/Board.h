@@ -61,6 +61,8 @@ public:
 
   // Remove matched tiles, damage adjacent obstacles. Returns true if any.
   bool resolveMatches();
+  int getLastClearedTileCount() const { return lastClearedTileCount; }
+  void clearLastClearedTileCount() { lastClearedTileCount = 0; }
 
   // Gravity: tiles fall into empty cells. Returns true if anything moved.
   bool applyGravity();
@@ -101,6 +103,7 @@ private:
 
   int lastSwapR1 = -1, lastSwapC1 = -1;
   int lastSwapR2 = -1, lastSwapC2 = -1;
+  int lastClearedTileCount = 0;
 
   std::vector<std::pair<int, int>> lastSpecialAffectedCells;
   SpecialType lastSpecialType = SpecialType::NONE;

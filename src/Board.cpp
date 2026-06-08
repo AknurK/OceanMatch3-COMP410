@@ -227,6 +227,8 @@ void Board::clearCells(const std::vector<std::pair<int, int>> &cells) {
     if (cell.isObstacle()) {
       damageObstacleAt(r, c);
     } else {
+      if (cell.type != TileType::NONE)
+        lastClearedTileCount++;
       cell = Cell{};
     }
   }
@@ -468,6 +470,8 @@ bool Board::activatePreExistingSpecials(int r1, int c1, int r2, int c2,
 // resolveMatches
 // ------------------------------------------------------------
 bool Board::resolveMatches() {
+  lastClearedTileCount = 0;
+
   std::vector<RunInfo> runs;
   std::vector<SquareInfo> squares;
   std::vector<std::vector<bool>> matched(rows, std::vector<bool>(cols, false));
@@ -722,6 +726,9 @@ if (!spawn.valid) {
   for (auto [r, c] : allMatched) {
     if (spawn.valid && r == spawn.row && c == spawn.col)
       continue;
+    Cell &cell = grid[r][c];
+    if (cell.type != TileType::NONE && !cell.isObstacle())
+      lastClearedTileCount++;
     grid[r][c] = Cell{};
   }
 
@@ -771,6 +778,8 @@ void Board::refill() {
 // swapTiles
 // ------------------------------------------------------------
 bool Board::swapTiles(int r1, int c1, int r2, int c2) {
+  lastClearedTileCount = 0;
+
   if (!inBounds(r1, c1) || !inBounds(r2, c2))
     return false;
   if (std::abs(r2 - r1) + std::abs(c2 - c1) != 1)

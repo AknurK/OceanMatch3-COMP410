@@ -7,6 +7,36 @@
 
 Game *Game::s_instance = nullptr;
 
+namespace {
+constexpr double HOME_BUTTON_X = 330.0;
+constexpr double HOME_START_Y = 420.0;
+constexpr double HOME_EXIT_Y = 505.0;
+constexpr double HOME_BUTTON_W = 240.0;
+constexpr double HOME_BUTTON_H = 60.0;
+constexpr double MENU_BUTTON_X = 760.0;
+constexpr double MENU_BUTTON_Y = 832.0;
+constexpr double MENU_BUTTON_W = 115.0;
+constexpr double MENU_BUTTON_H = 46.0;
+
+bool pointInRect(double x, double y, double rx, double ry, double rw,
+                 double rh) {
+  return x >= rx && x <= rx + rw && y >= ry && y <= ry + rh;
+}
+
+void bottomRightOverlayCoords(double mouseX, double mouseY, int winW, int winH,
+                              double &x, double &y) {
+  const double overlaySize = std::min(winW, winH);
+  if (overlaySize <= 0.0) {
+    x = 0.0;
+    y = 0.0;
+    return;
+  }
+
+  x = (mouseX - (winW - overlaySize)) * REFERENCE_SIZE / overlaySize;
+  y = (mouseY - (winH - overlaySize)) * REFERENCE_SIZE / overlaySize;
+}
+} // namespace
+
 void Game::mouseButtonCB(GLFWwindow *w, int btn, int action, int mods) {
   if (!s_instance)
     return;
@@ -25,6 +55,18 @@ void Game::mouseButtonCB(GLFWwindow *w, int btn, int action, int mods) {
   double scaled_mx = mx - x_offset;
   double scaled_my = my - y_offset;
 
+  if (s_instance->homeScreenActive) {
+    s_instance->handleHomeClick(scaled_mx, scaled_my, btn, action);
+    return;
+  }
+
+  double overlayX, overlayY;
+  bottomRightOverlayCoords(mx, my, winW, winH, overlayX, overlayY);
+  if (s_instance->isMenuButton(overlayX, overlayY)) {
+    s_instance->handleMenuClick(overlayX, overlayY, btn, action);
+    return;
+  }
+
   // Use ray-plane intersection to find which board cell was clicked
   auto [row, col] = s_instance->renderer.screenToBoard(scaled_mx, scaled_my);
   s_instance->inputMgr.onMouseButton(btn, action, row, col);
@@ -41,6 +83,53 @@ void Game::framebufferCB(GLFWwindow *w, int fbWidth, int fbHeight) {
   glfwGetWindowSize(w, &winW, &winH);
   s_instance->cachedPixelScale =
       (winW > 0) ? (float)fbWidth / (float)winW : 1.0f;
+}
+
+bool Game::isHomeStartButton(double x, double y) const {
+  return pointInRect(x, y, HOME_BUTTON_X, HOME_START_Y, HOME_BUTTON_W,
+                     HOME_BUTTON_H);
+}
+
+bool Game::isHomeExitButton(double x, double y) const {
+  return pointInRect(x, y, HOME_BUTTON_X, HOME_EXIT_Y, HOME_BUTTON_W,
+                     HOME_BUTTON_H);
+}
+
+bool Game::isMenuButton(double x, double y) const {
+  return pointInRect(x, y, MENU_BUTTON_X, MENU_BUTTON_Y, MENU_BUTTON_W,
+                     MENU_BUTTON_H);
+}
+
+void Game::handleHomeClick(double x, double y, int button, int action) {
+  if (button != GLFW_MOUSE_BUTTON_LEFT || action != GLFW_PRESS)
+    return;
+
+  if (isHomeStartButton(x, y)) {
+    homeScreenActive = false;
+    gameStarted = true;
+    inputMgr.selRow = -1;
+    inputMgr.selCol = -1;
+  } else if (isHomeExitButton(x, y)) {
+    glfwSetWindowShouldClose(window, GLFW_TRUE);
+  }
+}
+
+void Game::handleMenuClick(double x, double y, int button, int action) {
+  if (button != GLFW_MOUSE_BUTTON_LEFT || action != GLFW_PRESS)
+    return;
+  if (!isMenuButton(x, y))
+    return;
+
+  homeScreenActive = true;
+  inputMgr.selRow = -1;
+  inputMgr.selCol = -1;
+}
+
+void Game::collectScoreFromBoard() {
+  int clearedTiles = board.getLastClearedTileCount();
+  if (clearedTiles > 0)
+    scoreCount += clearedTiles;
+  board.clearLastClearedTileCount();
 }
 
 void Game::updateBackgroundCameraControls(float dt) {
@@ -176,6 +265,7 @@ bool Game::init() {
     board.applyGravity();
     board.refill();
   }
+  board.clearLastClearedTileCount();
 
   return true;
 }
@@ -244,7 +334,12 @@ void Game::updateAnimation(float dt) {
       return;
     }
     // Valid swap → commit and enter resolve cascade
-    board.swapTiles(animR1, animC1, animR2, animC2);
+    if (!board.swapTiles(animR1, animC1, animR2, animC2)) {
+      swapState = SwapState::BACK;
+      return;
+    }
+    moveCount++;
+    collectScoreFromBoard();
     swapState = SwapState::RESOLVING;
     // fall through to RESOLVING
   }
@@ -307,6 +402,7 @@ void Game::updateAnimation(float dt) {
   // ── Resolving (instant logic step) ──────────────────────────────────
   if (swapState == SwapState::RESOLVING) {
     bool resolvedMatches = board.resolveMatches();
+    collectScoreFromBoard();
     bool specialTriggered = !board.getLastSpecialAffectedCells().empty();
     bool hasHoles = boardHasEmptyCells(board);
 
@@ -397,7 +493,8 @@ void Game::run() {
     lastTime = now;
 
     glfwPollEvents();
-    updateBackgroundCameraControls(dt);
+    if (!homeScreenActive)
+      updateBackgroundCameraControls(dt);
 
     // Update animation state machine
     updateAnimation(dt);
@@ -443,6 +540,14 @@ void Game::run() {
     glViewport(0, 0, cachedFBWidth, cachedFBHeight);
     renderer.beginFrame();   // glClear with background colour
     oceanBackground.render(now, cachedFBWidth, cachedFBHeight);
+    if (homeScreenActive) {
+      glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+      glDepthMask(GL_TRUE);
+      glDisable(GL_CULL_FACE);
+      glDisable(GL_SCISSOR_TEST);
+      glDisable(GL_STENCIL_TEST);
+      renderer.drawHomeBackdrop();
+    }
 
     // 2) Set the fixed-size viewport: exactly REFERENCE_SIZE logical pixels
     //    centred within the framebuffer.  Content is NEVER scaled — it is
@@ -464,8 +569,45 @@ void Game::run() {
     glDisable(GL_STENCIL_TEST);
     glClear(GL_DEPTH_BUFFER_BIT);
 
+    if (homeScreenActive) {
+      double mx, my;
+      glfwGetCursorPos(window, &mx, &my);
+      int winW, winH;
+      glfwGetWindowSize(window, &winW, &winH);
+      const double xOffset = (winW - REFERENCE_SIZE) / 2.0;
+      const double yOffset = (winH - REFERENCE_SIZE) / 2.0;
+      const double logicalX = mx - xOffset;
+      const double logicalY = my - yOffset;
+      renderer.drawHomeScreen(isHomeStartButton(logicalX, logicalY),
+                              isHomeExitButton(logicalX, logicalY),
+                              gameStarted);
+      glfwSwapBuffers(window);
+      continue;
+    }
+
     renderer.drawBoard(board, inputMgr.selRow, inputMgr.selCol, swapAnim,
                        fallAnim, explosionAnim);
+
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_STENCIL_TEST);
+
+    double mx, my;
+    glfwGetCursorPos(window, &mx, &my);
+    int winW, winH;
+    glfwGetWindowSize(window, &winW, &winH);
+    double overlayX, overlayY;
+    bottomRightOverlayCoords(mx, my, winW, winH, overlayX, overlayY);
+
+    const int overlaySize = std::min(cachedFBWidth, cachedFBHeight);
+    glViewport(0, cachedFBHeight - overlaySize, overlaySize, overlaySize);
+    renderer.drawHud(moveCount, scoreCount, false, true, false);
+
+    glViewport(cachedFBWidth - overlaySize, 0, overlaySize, overlaySize);
+    renderer.drawHud(moveCount, scoreCount, isMenuButton(overlayX, overlayY),
+                     false, true);
     glfwSwapBuffers(window);
   }
   glfwDestroyWindow(window);
